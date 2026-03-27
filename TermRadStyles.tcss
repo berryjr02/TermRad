@@ -1,0 +1,40 @@
+Screen {
+    layout: vertical;
+    background: $surface;
+}
+
+Header {
+    dock: top;
+    height: 1;
+    background: $boost;
+    color: $text;
+}
+
+Footer {
+    dock: bottom;
+    height: auto;
+    background: $boost;
+    color: $text;
+}
+
+#forecast_container {
+    border: solid $primary;
+    width: 100%;
+    height: auto;
+    layout: grid;
+    /* grid-rows: auto; makes it so every forecast item takes up an entire row. I have not figured out how to neatly fit them all in a grid that maximizes screen space */
+    grid-rows: auto;
+    grid-gutter: 1 1;
+    padding: 1 2;
+}
+
+.forecast_item {
+    width: 1fr;
+    height: auto;
+    border: solid $accent;
+    padding: 1 2;
+    background: $panel;
+    color: $text;
+    text-align: center;
+}
+
