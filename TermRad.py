@@ -16,14 +16,17 @@ class ForecastWidget(Static):
 class TermRad(Screen):
     BINDINGS = [("escape", "app.pop_screen", "Pop screen")]
 
+    #TermRad will not run with this code in the App class. I don't understand why
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         yield ScrollableContainer(id="forecast_container")
         yield Footer()
 
     def on_mount(self) -> None:
+        #this is hardcoded to flint right now for testing. 
         forecast_data = get_numerical_forecast(43.0125, -83.6875)
 
+        #dynamically create forecast widget per recieved data 
         forecast_widgets = [
                 ForecastWidget(period, id=f"forecast{i}", classes="forecast_item")
                 for i, period in enumerate(forecast_data)
