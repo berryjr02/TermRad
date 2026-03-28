@@ -1,21 +1,113 @@
 Screen {
-    layout: grid;
-    grid-size: 2;
-    grid-gutter: 2;
-    padding: 2;
     background: #222222;
-}
-Header, Footer {
-    background: #CC8E39;
-}
-#question {
-    width: 100%;
-    height: 100%;
-    column-span: 2;
-    content-align: center bottom;
-    text-style: bold;
+    min-width: 100;     /* Enforces a minimum width to protect ASCII art */
+    min-height: 30;     /* Enforces a minimum height */
+    overflow: auto;     /* Adds scrollbars if the terminal window is too small */
 }
 
-Button {
-    width: 100%;
+Header, Footer {
+    background: #CC8E39;
+    color: white;
+}
+
+/* --- Home Screen --- */
+#home-container {
+    align: center middle; 
+    width: 100%;          
+    height: 100%;
+}
+
+#title-art {
+    width: auto;
+    margin-bottom: 2;
+}
+
+.menu-button {
+    width: 30;
+    margin-bottom: 1;
+    background: transparent;
+    border: none;
+}
+
+.menu-button:hover {
+    background: #333333;
+}
+
+#ip-switch-container {
+    width: 100%;          /* Forces the container to span the full screen */
+    align: center middle; /* Perfectly centers the Label and Switch inside the full-width row */
+    height: auto;
+    margin-top: 1;
+}
+
+#ip-switch-container Label {
+    margin-right: 2;
+    padding-top: 1;
+}
+
+/* --- Radar/Forecast Screen --- */
+#radar-container {
+    height: 100%;
+    padding: 2;
+}
+
+#alert-panel {
+    width: 35%;
+    height: 100%;
+    padding-right: 4;
+}
+
+#alert-title {
+    color: #FF5555;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#map-panel {
+    width: 65%;
+    align: center middle;
+}
+
+#map-art {
+    text-align: center;
+}
+
+#legend-label {
+    text-align: center;
+    margin-top: 1;
+}
+
+/* --- Settings Screen --- */
+#settings-container {
+    align: center middle;
+    height: 100%;
+    layout: horizontal;
+}
+
+.settings-box {
+    width: 40;
+    height: 25;
+    background: #CC8E39;
+    color: white;
+    margin: 0 4;
+    padding: 2 4;
+}
+
+.settings-title {
+    text-style: bold;
+    margin-bottom: 2;
+}
+
+RadioSet {
+    background: transparent;
+    border: none;
+    margin-bottom: 2;
+}
+
+RadioButton {
+    color: black;
+}
+
+RadioButton:focus {
+    text-style: bold;
 }
