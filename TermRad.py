@@ -2,6 +2,8 @@ from textual.app import App, ComposeResult
 from textual.screen import Screen
 from textual.widgets import Header, Footer, Button, Label, Static, Switch, RadioSet, RadioButton
 from textual.containers import Container, Horizontal, Vertical, Center
+from textual import work
+from radar_animator import get_radar_frames
 
 with open('logo.txt', 'r') as file_handle:
     ASCII_ART = file_handle.read()
@@ -52,23 +54,66 @@ class RadarScreen(Screen):
         yield Header(show_clock=True)
         with Horizontal(id="radar-container"):
 
-            # ALERTS Placeholder
+            # ALERTS Panel
             with Vertical(id="alert-panel"):
                 yield Label("URGENT WEATHER ALERT", id="alert-title")
                 yield Label(
                     "Areas of dense fog and freezing fog will continue to develop across "
                     "portions of northern Michigan through the morning hours. Visibilities "
-                    "of one half mile or less have been observed in localized areas. Untreated "
-                    "roadways may be slick in spots due to patchy areas of freezing fog. If you "
-                    "encounter dense fog while traveling, use low beam headlights and increase "
-                    "following distance."
+                    "of one half mile or less have been observed in localized areas..."
                 )
 
-            # MAP w/ LEGEND
+            # MAP w/ LEGEND Panel
             with Vertical(id="map-panel"):
                 yield Static(MICHIGAN_MAP_PLACEHOLDER, id="map-art")
-                yield Label("LEGEND  [ ]", id="legend-label") # Placeholder for legend
+                
+                # The Frame Counter (What your timer is updating)
+                yield Label("FRAME  [ ]", id="legend-label") 
+                
+                # The New Color Legend
+                with Horizontal(id="legend-container"):
+                    yield Label("Snow/Ice", classes="legend-swatch swatch-snow")
+                    yield Label("Light Rain", classes="legend-swatch swatch-light")
+                    yield Label("Mod Rain", classes="legend-swatch swatch-mod")
+                    yield Label("Heavy Rain", classes="legend-swatch swatch-heavy")
+                    yield Label("Hail/Extreme", classes="legend-swatch swatch-hail")                    
         yield Footer()
+
+    def on_mount(self) -> None:
+        self.frames = []
+        self.current_frame_index = 0
+        self.animation_timer = None
+        
+        self.fetch_radar_data()
+
+    @work(thread=True) # Runs in a background thread
+    def fetch_radar_data(self) -> None:
+        # Fetch the frames using our new function
+        self.frames = get_radar_frames(MICHIGAN_MAP_PLACEHOLDER, num_frames=5)
+        
+        # Once data is fetched, start the animation loop on the main UI thread
+        self.app.call_from_thread(self.start_animation)
+
+    def start_animation(self) -> None:
+        if not self.frames:
+            self.query_one("#map-art", Static).update("Failed to load radar.")
+            return
+            
+        # Set an interval to update the map every 0.5 seconds
+        self.animation_timer = self.set_interval(0.5, self.update_frame)
+
+    def update_frame(self) -> None:
+        if self.frames:
+            # Update the static widget with the current Rich Text frame
+            map_widget = self.query_one("#map-art", Static)
+            map_widget.update(self.frames[self.current_frame_index])
+            
+            # Update the legend to prove the timer is running! --> Will change later
+            legend = self.query_one("#legend-label", Label)
+            legend.update(f"LEGEND  [ Frame {self.current_frame_index + 1} of {len(self.frames)} ]")
+            
+            # Move to the next frame, loop back to 0 if at the end
+            self.current_frame_index = (self.current_frame_index + 1) % len(self.frames)
 
 class SettingsScreen(Screen):
     """The configuration settings screen."""

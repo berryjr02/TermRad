@@ -77,6 +77,28 @@ Header, Footer {
     margin-top: 1;
 }
 
+/* --- Legend Styles --- */
+#legend-container {
+    height: auto;
+    align: center middle;
+    margin-top: 1;
+}
+
+.legend-swatch {
+    width: auto;      /* Let the box expand to fit the text! */
+    height: 1;
+    padding: 0 1;     /* Adds 1 space of padding on the left and right */
+    margin: 0 1;      /* Keeps the boxes spaced apart from each other */
+    text-style: bold; /* Makes the black/white text easier to read */
+}
+
+/* Base Reflectivity Colors */
+.swatch-snow  { background: #00FFFF; color: black; } /* Cyan */
+.swatch-light { background: #00FF00; color: black; } /* Green */
+.swatch-mod   { background: #FFFF00; color: black; } /* Yellow */
+.swatch-heavy { background: #FF0000; color: white; } /* Red */
+.swatch-hail  { background: #FF00FF; color: white; } /* Magenta */
+
 /* --- Settings Screen --- */
 #settings-container {
     align: center middle;
