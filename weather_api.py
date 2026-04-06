@@ -1,5 +1,6 @@
 import sys
 import time
+import datetime
 import requests
 from functools import lru_cache
 
@@ -77,3 +78,8 @@ def get_numerical_forecast(lat, lon):
         forecast_list.append(stats)
         
     return forecast_list
+
+def write_log(message):
+    with open("TermRad.log", "a") as f:
+        message = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S") + ": " + message
+        f.write(f"{message}\n")

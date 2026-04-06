@@ -1,11 +1,11 @@
 from textual.app import App, ComposeResult
 from textual.screen import Screen
-from textual.widgets import Header, Footer, Button, Label, Static, Switch, RadioSet, RadioButton, LoadingIndicator
+from textual.widgets import Header, Footer, Button, Label, Static, Switch, RadioSet, RadioButton, LoadingIndicator, Log
 from textual.containers import Container, Horizontal, Vertical, Center
 from textual import work
 import json
 from radar_animator import get_radar_frames
-from weather_api import get_alerts, get_coords_auto
+from weather_api import get_alerts, get_coords_auto, write_log
 
 with open('logo.txt', 'r') as file_handle:
     ASCII_ART = file_handle.read()
@@ -251,7 +251,46 @@ class SettingsScreen(Screen):
         with open("settings.json", "w") as f:
             json.dump(settings, f)
 
+class LogScreen(Screen):
+
+    def compose(self) -> ComposeResult:
+        with Horizontal(id="log-container"):
+            yield Header(show_clock=True)
+            yield Log()
+            yield Footer()
+
+    def on_mount(self) -> None:
+        log = self.query_one(Log)
+        log.clear()
+        
+        self.last_read_position = 0
+        try:
+            with open("TermRad.log", "r") as f:
+                f.seek(self.last_read_position)
+                for line in f:
+                    log.write_line(line.rstrip())
+                self.last_read_position = f.tell()
+        except FileNotFoundError:
+            log.write_line("TermRad.log not found. No logs to display.")
+
+        self.set_interval(1, self.update_log_content)
+
+    def update_log_content(self) -> None:
+        log = self.query_one(Log)
+        try:
+            with open("TermRad.log", "r") as f:
+                f.seek(self.last_read_position)
+                new_content = f.read()
+                if new_content:
+                    for line in new_content.splitlines():
+                        log.write_line(line)
+                    self.last_read_position = f.tell()
+        except FileNotFoundError:
+            pass
+
+
 class TermRad(App):
+
     """A terminal radar and weather forecasting app."""
     CSS_PATH = "TermRadStyles.tcss"
 
@@ -260,31 +299,42 @@ class TermRad(App):
         ("h", "home", "Home"), 
         ("r", "radar", "Radar"), 
         ("f", "radar", "Forecast"), # Mapping 'f' to radar screen to match screenshots
-        ("s", "settings", "Settings"), 
+        ("ctrl+l", "log", "Log")
+        # ("s", "settings", "Settings"), 
         #("ctrl+s", "screenshot", "Screenshot"), 
         #("ctrl+a", "maximize", "Maximize")
     ]
+    
 
     def on_mount(self) -> None:
         # Register screens
         self.install_screen(HomeScreen(), name="home")
         self.install_screen(RadarScreen(), name="radar")
         self.install_screen(SettingsScreen(), name="settings")
+        self.install_screen(LogScreen(), name="log")
         # Start on the home screen
         self.push_screen("home")
 
     # Action methods mapped to BINDINGS
     def action_quit(self) -> None:
+        write_log("Exiting...")
         self.exit()
     
     def action_home(self) -> None:
+        write_log("Switching to home screen...")
         self.switch_screen("home")
         
     def action_radar(self) -> None:
+        write_log("Switching to radar screen...")
         self.switch_screen("radar")
         
     def action_settings(self) -> None:
+        write_log("Switching to settings screen...")
         self.switch_screen("settings")
+
+    def action_log(self) -> None:
+        write_log("Switching to log screen...")
+        self.switch_screen("log")
 
 if __name__ == "__main__":
     app = TermRad()
