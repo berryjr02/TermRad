@@ -6,6 +6,7 @@ from textual import work
 import json
 from radar_animator import get_radar_frames
 from weather_api import get_alerts, get_coords_auto
+from datetime import datetime, timedelta
 
 with open('logo.txt', 'r') as file_handle:
     ASCII_ART = file_handle.read()
@@ -158,6 +159,9 @@ class RadarScreen(Screen):
             self.query_one("#map-art", Static).update("Failed to load radar.")
             return
             
+        now = datetime.now()
+        self.base_time = now.replace(minute=(now.minute // 15) * 15, second=0, microsecond=0)
+
         # Set an interval to update the map every 0.5 seconds
         self.animation_timer = self.set_interval(0.5, self.update_frame)
 
@@ -167,9 +171,15 @@ class RadarScreen(Screen):
             map_widget = self.query_one("#map-art", Static)
             map_widget.update(self.frames[self.current_frame_index])
             
-            # Update the legend to prove the timer is running! --> Will change later
+            frames_from_newest = (len(self.frames) - 1) - self.current_frame_index
+            frame_time = self.base_time - timedelta(minutes=frames_from_newest * 15)
+            
+            # Format to 12-hour time (e.g., "4:15 PM"). The lstrip("0") removes leading zeros.
+            time_str = frame_time.strftime("%I:%M %p").lstrip("0")
+            
+            # Update the legend with the time!
             legend = self.query_one("#legend-label", Label)
-            legend.update(f"LEGEND  [ Frame {self.current_frame_index + 1} of {len(self.frames)} ]")
+            legend.update(f"LEGEND  [ {time_str} ]")
             
             # Move to the next frame, loop back to 0 if at the end
             self.current_frame_index = (self.current_frame_index + 1) % len(self.frames)

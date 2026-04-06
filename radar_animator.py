@@ -60,13 +60,13 @@ def get_radar_frames(ascii_map_string, num_frames=5, highlight_lat=None, highlig
     if highlight_lat is not None and highlight_lon is not None:
         highlight_coord = latlon_to_pixel(highlight_lat, highlight_lon, MICHIGAN_BBOX, width, height)
     
-    now = datetime.now(timezone.utc) - timedelta(minutes=10)
+    now = datetime.now(timezone.utc)
     now = now.replace(minute=(now.minute // 15) * 15, second=0, microsecond=0)
 
     for i in range(num_frames, 0, -1):
         frame_time = now - timedelta(minutes=((i - 1) * 15))
         time_str = frame_time.strftime("%Y-%m-%dT%H:%M:00Z")
-        
+
         params = {
             "SERVICE": "WMS",
             "VERSION": "1.1.1",     
