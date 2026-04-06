@@ -40,21 +40,29 @@ def get_coords_auto():
 
 @lru_cache(maxsize=1)
 def get_point_metadata(lat, lon):
+    if lat is None or lon is None:
+        return {"properties": {"forecast": None}}  # Return empty metadata if location is unknown
     url = f"https://api.weather.gov/points/{lat},{lon}"
     print(f"Fetching point metadata from NWS for {lat}, {lon} with URL: {url}")
     return fetch_json(url, "NWS location data")
 
 
 def get_alerts(lat, lon):
+    if lat is None or lon is None:
+        return {"features": []}  # Return empty alerts if location is unknown
     url = f"https://api.weather.gov/alerts/active?point={lat},{lon}"
     return fetch_json(url, "NWS alerts")
 
 
 def get_forecast(lat, lon):
+    if lat is None or lon is None:
+        return []  # Return empty forecast if location is unknown
     return fetch_json(get_point_metadata(lat, lon)["properties"]["forecast"], "NWS forecast")
 
 
 def get_numerical_forecast(lat, lon):
+    if lat is None or lon is None:
+        return []  # Return empty forecast if location is unknown
     raw_data = get_forecast(lat, lon)
     
     periods = raw_data.get("properties", {}).get("periods", [])

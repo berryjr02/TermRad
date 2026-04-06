@@ -5,31 +5,66 @@ from PIL import Image
 from rich.text import Text
 from datetime import datetime, timedelta, timezone
 
-# Michigan's rough bounding box (West, South, East, North)
-MICHIGAN_BBOX = "-90.41,41.69,-82.41,48.30"
+# Michigan's rough bounding box (West, South, East, North) - specifically for the Lower Peninsula!
+MICHIGAN_BBOX = "-87.00,41.69,-82.50,45.80"
 
-def get_radar_frames(ascii_map_string, num_frames=5):
+def latlon_to_pixel(lat, lon, bbox_str, width, height):
+    """Converts a latitude and longitude to a pixel coordinate."""
+    try:
+        west_lon, south_lat, east_lon, north_lat = [float(c) for c in bbox_str.split(',')]
+        lat, lon = float(lat), float(lon)
+
+        # Check if the coordinate is within the bounding box
+        if not (south_lat <= lat <= north_lat and west_lon <= lon <= east_lon):
+            return None
+
+        # Calculate percentage across the map
+        lon_fraction = (lon - west_lon) / (east_lon - west_lon)
+        lat_fraction = (north_lat - lat) / (north_lat - south_lat)
+
+        # FIX: Use round() and (width - 1) for accurate 0-indexed terminal mapping
+        x = round(lon_fraction * (width - 1))
+        y = round(lat_fraction * (height - 1))
+
+        # Clamp values to be safely within image bounds
+        x = max(0, min(x, width - 1))
+        y = max(0, min(y, height - 1))
+
+        return x, y
+    except (ValueError, IndexError):
+        return None
+
+def get_radar_frames(ascii_map_string, num_frames=5, highlight_lat=None, highlight_lon=None):
     """Fetches radar frames and returns a list of Rich Text objects."""
     
     # 1. Determine dimensions of your ascii map
     lines = ascii_map_string.strip("\n").split("\n")
+    
+    # Format Map
+    lines = [line.rstrip() for line in lines]
+    min_indent = min(len(line) - len(line.lstrip()) for line in lines if line.strip())
+    lines = [line[min_indent:] for line in lines]
+    
     height = len(lines)
     width = max(len(line) for line in lines)
-    
-    # Pad lines so they are all exactly the same width
-    padded_lines = [line.ljust(width) for line in lines]
 
+    # Pad lines so they are all exactly the same width for the grid
+    padded_lines = [line.ljust(width) for line in lines]
     frames = []
     
     # 2. Fetch images from IEM WMS
     base_url = "https://mesonet.agron.iastate.edu/cgi-bin/wms/nexrad/n0q-t.cgi"
     
-    # Get current time, offset by 10 minutes to allow radar processing, then round to 15 mins
+    # Calculate the pixel to highlight for location, if provided
+    highlight_coord = None
+    if highlight_lat is not None and highlight_lon is not None:
+        highlight_coord = latlon_to_pixel(highlight_lat, highlight_lon, MICHIGAN_BBOX, width, height)
+    
     now = datetime.now(timezone.utc) - timedelta(minutes=10)
     now = now.replace(minute=(now.minute // 15) * 15, second=0, microsecond=0)
 
     for i in range(num_frames, 0, -1):
-        frame_time = now - timedelta(minutes=(i * 15))
+        frame_time = now - timedelta(minutes=((i - 1) * 15))
         time_str = frame_time.strftime("%Y-%m-%dT%H:%M:00Z")
         
         params = {
@@ -49,27 +84,11 @@ def get_radar_frames(ascii_map_string, num_frames=5):
         try:
             response = requests.get(base_url, params=params, timeout=10)
             if response.status_code == 200:
-                # SAFETY CHECK: Ensure the server actually sent an image, not an XML error
-                content_type = response.headers.get("Content-Type", "")
-                
-                if "image" in content_type:
+                if "image" in response.headers.get("Content-Type", ""):
                     img = Image.open(BytesIO(response.content)).convert("RGBA")
-                    
-                    # DEBUG: Save the last frame to your folder so you can verify it exists
-                    if i == 1:
-                        img.save("debug_radar.png")
-                        
                     frames.append(img)
-                else:
-                    # If it's XML/text, log what the server is actually complaining about!
-                    with open("radar_error.log", "a") as f:
-                        f.write(f"[{time_str}] Server returned text error: {response.text[:300]}\n")
-            else:
-                with open("radar_error.log", "a") as f:
-                    f.write(f"[{time_str}] Failed with status: {response.status_code}\n")
         except Exception as e:
-            with open("radar_error.log", "a") as f:
-                f.write(f"[{time_str}] Request exception: {e}\n")
+            pass # Fails gracefully if network drops
 
     # 3. Process pixels and build Rich Text frames
     rich_frames = []
@@ -78,24 +97,32 @@ def get_radar_frames(ascii_map_string, num_frames=5):
         for y in range(height):
             for x in range(width):
                 char = padded_lines[y][x]
-                
-                # Get the pixel color at this exact character's position
-                r, g, b, a = img.getpixel((x, y))
 
-                # If the pixel is mostly transparent, just draw the character
-                if a < 50:
-                    text.append(char)
+                r, g, b, a = img.getpixel((x, y))
+                style = ""
+                
+                # If there's radar data, set the background color
+                if a >= 50:
+                    style = f"on #{r:02x}{g:02x}{b:02x}"
+
+                # Apply the location highlight OVER the map
+                if highlight_coord:
+                    hx, hy = highlight_coord
+                    if x == hx and y == hy or (hx - 1 <= x <= hx + 1 and hy - 1 <= y <= hy + 1):
+                        char = "X"
+                        style = "bold black on #FFFFFF"
+
+                # Append the character with the determined style
+                if style:
+                    text.append(char, style=style)
                 else:
-                    # Apply the radar pixel color as the background of the character
-                    hex_color = f"#{r:02x}{g:02x}{b:02x}"
-                    text.append(char, style=f"on {hex_color}")
+                    text.append(char)
                     
             if y < height - 1:
                 text.append("\n")
                 
         rich_frames.append(text) 
     
-    # If all API requests failed, return the static map as a fallback
     if not rich_frames:
         return [Text(ascii_map_string)]
         

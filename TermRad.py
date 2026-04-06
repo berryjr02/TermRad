@@ -38,19 +38,18 @@ class HomeScreen(Screen):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "btn-forecast":
-            self.app.switch_screen("radar")
+            self.app.switch_screen(RadarScreen())
         elif event.button.id == "btn-settings":
             self.app.switch_screen("settings")
 
     # --- Keyboard Action Handlers ---
     def action_go_forecast(self) -> None:
-        self.app.switch_screen("radar")
+        self.app.switch_screen(RadarScreen())
         
     def action_go_settings(self) -> None:
         self.app.switch_screen("settings")
 
     def on_mount(self) -> None:
-        # Load use_ip setting
         try:
             with open("settings.json", "r") as f:
                 settings = json.load(f)
@@ -62,7 +61,6 @@ class HomeScreen(Screen):
 
     def on_switch_changed(self, event: Switch.Changed) -> None:
         if event.switch.id == "use-ip":
-            # Save use_ip setting
             try:
                 with open("settings.json", "r") as f:
                     settings = json.load(f)
@@ -102,29 +100,36 @@ class RadarScreen(Screen):
                     yield Label("Light Rain", classes="legend-swatch swatch-light")
                     yield Label("Mod Rain", classes="legend-swatch swatch-mod")
                     yield Label("Heavy Rain", classes="legend-swatch swatch-heavy")
-                    yield Label("Hail/Extreme", classes="legend-swatch swatch-hail")                    
-        yield Footer()
+                    yield Label("Hail/Extreme", classes="legend-swatch swatch-hail") 
+                    yield Label("Your Location", classes="legend-swatch swatch-location")                    
+        yield Footer()        
 
     def on_mount(self) -> None:
         self.frames = []
         self.current_frame_index = 0
         self.animation_timer = None
+        try:
+            with open("settings.json", "r") as f:
+                settings = json.load(f)
+        except FileNotFoundError:
+            settings = {}
         
         # Show loading, hide map initially
         self.query_one("#loading").display = True
         self.query_one("#map-art").display = False
         
+        self.lat, self.lon, self.country = None, None, None
         # Get coordinates
-        self.lat, self.lon, self.country = get_coords_auto()
+        use_ip_setting = settings.get("use_ip", True)
+        if use_ip_setting in [True, "true", "True"]:
+            self.lat, self.lon, self.country = get_coords_auto()
         
         self.fetch_radar_data(self.lat, self.lon)
 
     @work(thread=True) # Runs in a background thread
     def fetch_radar_data(self, lat, lon) -> None:
-        # Fetch the frames using our new function
-        self.frames = get_radar_frames(MICHIGAN_MAP_PLACEHOLDER, num_frames=5)
+        self.frames = get_radar_frames(MICHIGAN_MAP_PLACEHOLDER, num_frames=5, highlight_lat=lat, highlight_lon=lon)
         
-        # Fetch alerts
         self.alerts = get_alerts(lat, lon)
         
         # Once data is fetched, start the animation loop on the main UI thread
@@ -133,7 +138,7 @@ class RadarScreen(Screen):
     def start_animation(self) -> None:
         # Hide loading, show map
         self.query_one("#loading").display = False
-        self.query_one("#map-art").display = True
+        self.query_one("#map-art").display = True  
         
         # Update alerts
         if hasattr(self, 'alerts') and self.alerts.get("features"):
@@ -225,7 +230,11 @@ class SettingsScreen(Screen):
 
     def on_radio_set_changed(self, event: RadioSet.Changed) -> None:
         # Save settings
-        settings = {}
+        try:
+            with open("settings.json", "r") as f:
+                settings = json.load(f)
+        except FileNotFoundError:
+            settings = {}
         
         # Get temperature
         temp_radio = self.query_one("#temp-format", RadioSet)
@@ -268,8 +277,9 @@ class TermRad(App):
     def on_mount(self) -> None:
         # Register screens
         self.install_screen(HomeScreen(), name="home")
-        self.install_screen(RadarScreen(), name="radar")
+        # self.install_screen(RadarScreen(), name="radar")
         self.install_screen(SettingsScreen(), name="settings")
+
         # Start on the home screen
         self.push_screen("home")
 
@@ -281,7 +291,7 @@ class TermRad(App):
         self.switch_screen("home")
         
     def action_radar(self) -> None:
-        self.switch_screen("radar")
+        self.switch_screen(RadarScreen())
         
     def action_settings(self) -> None:
         self.switch_screen("settings")

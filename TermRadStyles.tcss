@@ -95,7 +95,6 @@ Header, Footer {
 }
 
 .legend-swatch {
-    width: 14;
     padding: 1 2;     /* Vertical and horizontal padding for visibility */
     margin: 0 1;
     text-style: bold;
@@ -109,6 +108,7 @@ Header, Footer {
 .swatch-mod   { background: #FFFF00; color: black; } /* Yellow */
 .swatch-heavy { background: #FF0000; color: white; } /* Red */
 .swatch-hail  { background: #FF00FF; color: white; } /* Magenta */
+.swatch-location { background: #FFFFFF; color: black; } /* White */
 
 /* --- Settings Screen --- */
 #settings-container {
