@@ -63,33 +63,44 @@ Header, Footer {
     margin-bottom: 1;
 }
 
+#alert-description {
+    width: 100%;
+    color: #FFFFFF;
+}
+
 #map-panel {
     width: 65%;
-    align: center middle;
+    align: center top;
 }
 
 #map-art {
     text-align: center;
+    height: auto;
 }
 
 #legend-label {
+    width: 100%;
     text-align: center;
     margin-top: 1;
+    margin-bottom: 1;
 }
 
 /* --- Legend Styles --- */
 #legend-container {
-    height: auto;
+    height: 3;        /* Reduced height for compact display */
+    width: 100%;
     align: center middle;
     margin-top: 1;
+    layout: horizontal;
 }
 
 .legend-swatch {
-    width: auto;      /* Let the box expand to fit the text! */
-    height: 1;
-    padding: 0 1;     /* Adds 1 space of padding on the left and right */
-    margin: 0 1;      /* Keeps the boxes spaced apart from each other */
-    text-style: bold; /* Makes the black/white text easier to read */
+    width: 14;
+    padding: 1 2;     /* Vertical and horizontal padding for visibility */
+    margin: 0 1;
+    text-style: bold;
+    text-align: center;
+    border: solid white;
 }
 
 /* Base Reflectivity Colors */
@@ -127,7 +138,7 @@ RadioSet {
 }
 
 RadioButton {
-    color: black;
+    color: white;
 }
 
 RadioButton:focus {

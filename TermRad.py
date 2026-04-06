@@ -1,9 +1,11 @@
 from textual.app import App, ComposeResult
 from textual.screen import Screen
-from textual.widgets import Header, Footer, Button, Label, Static, Switch, RadioSet, RadioButton
+from textual.widgets import Header, Footer, Button, Label, Static, Switch, RadioSet, RadioButton, LoadingIndicator
 from textual.containers import Container, Horizontal, Vertical, Center
 from textual import work
+import json
 from radar_animator import get_radar_frames
+from weather_api import get_alerts, get_coords_auto
 
 with open('logo.txt', 'r') as file_handle:
     ASCII_ART = file_handle.read()
@@ -31,7 +33,7 @@ class HomeScreen(Screen):
                 yield Button("2. Config Settings", id="btn-settings", variant="default", classes="menu-button")
             with Horizontal(id="ip-switch-container"):
                 yield Label("Use IP:")
-                yield Switch(value=True)
+                yield Switch(value=True, id="use-ip")                
         yield Footer()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -47,6 +49,31 @@ class HomeScreen(Screen):
     def action_go_settings(self) -> None:
         self.app.switch_screen("settings")
 
+    def on_mount(self) -> None:
+        # Load use_ip setting
+        try:
+            with open("settings.json", "r") as f:
+                settings = json.load(f)
+        except FileNotFoundError:
+            settings = {}
+        
+        use_ip = settings.get("use_ip", True)
+        self.query_one("#use-ip", Switch).value = use_ip
+
+    def on_switch_changed(self, event: Switch.Changed) -> None:
+        if event.switch.id == "use-ip":
+            # Save use_ip setting
+            try:
+                with open("settings.json", "r") as f:
+                    settings = json.load(f)
+            except FileNotFoundError:
+                settings = {}
+            
+            settings["use_ip"] = event.value
+            
+            with open("settings.json", "w") as f:
+                json.dump(settings, f)
+
 class RadarScreen(Screen):
     """The forecast and radar map screen."""
     
@@ -56,15 +83,14 @@ class RadarScreen(Screen):
 
             # ALERTS Panel
             with Vertical(id="alert-panel"):
-                yield Label("URGENT WEATHER ALERT", id="alert-title")
+                yield Label("Checking for weather alerts...", id="alert-title")
                 yield Label(
-                    "Areas of dense fog and freezing fog will continue to develop across "
-                    "portions of northern Michigan through the morning hours. Visibilities "
-                    "of one half mile or less have been observed in localized areas..."
+                    id="alert-description"
                 )
 
             # MAP w/ LEGEND Panel
             with Vertical(id="map-panel"):
+                yield LoadingIndicator(id="loading")
                 yield Static(MICHIGAN_MAP_PLACEHOLDER, id="map-art")
                 
                 # The Frame Counter (What your timer is updating)
@@ -84,17 +110,45 @@ class RadarScreen(Screen):
         self.current_frame_index = 0
         self.animation_timer = None
         
-        self.fetch_radar_data()
+        # Show loading, hide map initially
+        self.query_one("#loading").display = True
+        self.query_one("#map-art").display = False
+        
+        # Get coordinates
+        self.lat, self.lon, self.country = get_coords_auto()
+        
+        self.fetch_radar_data(self.lat, self.lon)
 
     @work(thread=True) # Runs in a background thread
-    def fetch_radar_data(self) -> None:
+    def fetch_radar_data(self, lat, lon) -> None:
         # Fetch the frames using our new function
         self.frames = get_radar_frames(MICHIGAN_MAP_PLACEHOLDER, num_frames=5)
+        
+        # Fetch alerts
+        self.alerts = get_alerts(lat, lon)
         
         # Once data is fetched, start the animation loop on the main UI thread
         self.app.call_from_thread(self.start_animation)
 
     def start_animation(self) -> None:
+        # Hide loading, show map
+        self.query_one("#loading").display = False
+        self.query_one("#map-art").display = True
+        
+        # Update alerts
+        if hasattr(self, 'alerts') and self.alerts.get("features"):
+            features = self.alerts["features"]
+            if features:
+                alert = features[0]["properties"]
+                self.query_one("#alert-title").update(alert.get("headline", "Weather Alert"))
+                self.query_one("#alert-description").update(alert.get("description", "No description available."))
+            else:
+                self.query_one("#alert-title").update("No Active Alerts")
+                self.query_one("#alert-description").update("")
+        else:
+            self.query_one("#alert-title").update("No Active Alerts")
+            self.query_one("#alert-description").update("")
+        
         if not self.frames:
             self.query_one("#map-art", Static).update("Failed to load radar.")
             return
@@ -123,7 +177,7 @@ class SettingsScreen(Screen):
         with Horizontal(id="settings-container"):
             with Vertical(classes="settings-box"):
                 yield Label("Temperature units", classes="settings-title")
-                with RadioSet():
+                with RadioSet(id="temp-format"):
                     yield RadioButton("Fahrenheit", value=True)
                     yield RadioButton("Celsius")
             
@@ -137,18 +191,78 @@ class SettingsScreen(Screen):
                     yield RadioButton("Standard Date", value=True)
         yield Footer()
 
+    def on_mount(self) -> None:
+        # Load settings from file
+        try:
+            with open("settings.json", "r") as f:
+                settings = json.load(f)
+        except FileNotFoundError:
+            settings = {}
+        
+        # Set temperature
+        temp_radio = self.query_one("#temp-format", RadioSet)
+        temp_value = settings.get("temperature", "Fahrenheit")
+        for radio in temp_radio.children:
+            if radio.label.plain == temp_value:
+                radio.value = True
+                break
+        
+        # Set time format
+        time_radio = self.query_one("#time-format", RadioSet)
+        time_value = settings.get("time_format", "12 hour")
+        for radio in time_radio.children:
+            if radio.label.plain == time_value:
+                radio.value = True
+                break
+        
+        # Set date format
+        date_radio = self.query_one("#date-format", RadioSet)
+        date_value = settings.get("date_format", "Standard Date")
+        for radio in date_radio.children:
+            if radio.label.plain == date_value:
+                radio.value = True
+                break
+
+    def on_radio_set_changed(self, event: RadioSet.Changed) -> None:
+        # Save settings
+        settings = {}
+        
+        # Get temperature
+        temp_radio = self.query_one("#temp-format", RadioSet)
+        for radio in temp_radio.children:
+            if radio.value:
+                settings["temperature"] = radio.label.plain
+                break
+        
+        # Get time format
+        time_radio = self.query_one("#time-format", RadioSet)
+        for radio in time_radio.children:
+            if radio.value:
+                settings["time_format"] = radio.label.plain
+                break
+        
+        # Get date format
+        date_radio = self.query_one("#date-format", RadioSet)
+        for radio in date_radio.children:
+            if radio.value:
+                settings["date_format"] = radio.label.plain
+                break
+        
+        with open("settings.json", "w") as f:
+            json.dump(settings, f)
+
 class TermRad(App):
     """A terminal radar and weather forecasting app."""
     CSS_PATH = "TermRadStyles.tcss"
 
     BINDINGS = [
-        ("ctrl+q", "quit", "Quit"), 
+        ("ctrl+q", "quit", "Quit"),
         ("h", "home", "Home"), 
         ("r", "radar", "Radar"), 
         ("f", "radar", "Forecast"), # Mapping 'f' to radar screen to match screenshots
         ("s", "settings", "Settings"), 
-        ("ctrl+s", "screenshot", "Screenshot"), 
-        ("ctrl+a", "maximize", "Maximize")
+        #("ctrl+s", "screenshot", "Screenshot"), 
+        #("ctrl+a", "maximize", "Maximize")
     ]
 
     def on_mount(self) -> None:
