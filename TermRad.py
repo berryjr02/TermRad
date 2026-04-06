@@ -39,13 +39,13 @@ class HomeScreen(Screen):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "btn-forecast":
-            self.app.switch_screen(RadarScreen())
+            self.app.switch_screen("radar")
         elif event.button.id == "btn-settings":
             self.app.switch_screen("settings")
 
     # --- Keyboard Action Handlers ---
     def action_go_forecast(self) -> None:
-        self.app.switch_screen(RadarScreen())
+        self.app.switch_screen("radar")
         
     def action_go_settings(self) -> None:
         self.app.switch_screen("settings")
@@ -120,12 +120,46 @@ class RadarScreen(Screen):
         self.query_one("#map-art").display = False
         
         self.lat, self.lon, self.country = None, None, None
+        
         # Get coordinates
         use_ip_setting = settings.get("use_ip", True)
+        self.current_use_ip = use_ip_setting # <-- ADD THIS LINE TO TRACK IT
+        
         if use_ip_setting in [True, "true", "True"]:
             self.lat, self.lon, self.country = get_coords_auto()
         
         self.fetch_radar_data(self.lat, self.lon)
+
+    def on_screen_resume(self) -> None:
+        """Called automatically every time the screen becomes active again."""
+        try:
+            with open("settings.json", "r") as f:
+                settings = json.load(f)
+        except FileNotFoundError:
+            settings = {}
+            
+        new_use_ip = settings.get("use_ip", True)
+        
+        # If the IP setting changed while we were away, we MUST re-render
+        if new_use_ip != self.current_use_ip:
+            self.current_use_ip = new_use_ip
+            
+            # Stop the old animation
+            if self.animation_timer:
+                self.animation_timer.stop()
+                
+            # Show loading indicator again
+            self.query_one("#loading").display = True
+            self.query_one("#map-art").display = False
+            
+            # Get new coordinates based on the new setting
+            if new_use_ip in [True, "true", "True"]:
+                self.lat, self.lon, self.country = get_coords_auto()
+            else:
+                self.lat, self.lon, self.country = None, None, None
+                
+            # Fetch new data!
+            self.fetch_radar_data(self.lat, self.lon)
 
     @work(thread=True) # Runs in a background thread
     def fetch_radar_data(self, lat, lon) -> None:
@@ -287,7 +321,7 @@ class TermRad(App):
     def on_mount(self) -> None:
         # Register screens
         self.install_screen(HomeScreen(), name="home")
-        # self.install_screen(RadarScreen(), name="radar")
+        self.install_screen(RadarScreen(), name="radar")
         self.install_screen(SettingsScreen(), name="settings")
 
         # Start on the home screen
@@ -301,7 +335,7 @@ class TermRad(App):
         self.switch_screen("home")
         
     def action_radar(self) -> None:
-        self.switch_screen(RadarScreen())
+        self.switch_screen("radar")
         
     def action_settings(self) -> None:
         self.switch_screen("settings")
