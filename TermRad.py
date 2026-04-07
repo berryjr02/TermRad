@@ -11,6 +11,17 @@ from datetime import datetime, timedelta
 with open('logo.txt', 'r') as file_handle:
     ASCII_ART = file_handle.read()
 
+def get_temperature_unit():
+    """Load the temperature unit preference from settings.json."""
+    try:
+        with open("settings.json", "r") as f:
+            settings = json.load(f)
+    except FileNotFoundError:
+        settings = {}
+    
+    temp_pref = settings.get("temperature", "Fahrenheit")
+    return "C" if temp_pref == "Celsius" else "F"
+
 
 with open('mich.txt', 'r') as file_handle:
     MICHIGAN_MAP_PLACEHOLDER = file_handle.read()
@@ -93,7 +104,12 @@ class ForecastWidget(Static):
 
     def render(self) -> str:
         p = self.period
-        return f"[bold]{p['time']}[/bold]\n{p['temp']}°{p['unit']}\n{p['short_forecast']}\nWind: {p['wind']}\nPrecip: {p['precip']}"
+        unit = get_temperature_unit()
+        if unit == "C":
+            temp_c = round((p['temp'] - 32) * (5.0 / 9.0), 1)
+            return f"[bold]{p['time']}[/bold]\n{temp_c}°{unit}\n{p['short_forecast']}\nWind: {p['wind']}\nPrecip: {p['precip']}"
+        else:
+            return f"[bold]{p['time']}[/bold]\n{p['temp']}°{unit}\n{p['short_forecast']}\nWind: {p['wind']}\nPrecip: {p['precip']}"
 
 class ForecastScreen(Screen):
     def compose(self) -> ComposeResult:
@@ -237,7 +253,11 @@ class RadarScreen(Screen):
         # Update forecast
         if hasattr(self, 'forecast_data') and self.forecast_data:
             period = self.forecast_data[0]
-            forecast_text = f"[bold]{period['time']}[/bold]\n{period['temp']}°{period['unit']}\n{period['short_forecast']}\nWind: {period['wind']}\nPrecip: {period['precip']}"
+            unit = get_temperature_unit()
+            temp = period['temp']
+            if unit == "C":
+                temp = round((temp - 32) * (5.0 / 9.0), 1)
+            forecast_text = f"[bold]{period['time']}[/bold]\n{temp}°{unit}\n{period['short_forecast']}\nWind: {period['wind']}\nPrecip: {period['precip']}"
             self.query_one("#latest-forecast").update(forecast_text)
         else:
             self.query_one("#latest-forecast").update("Forecast unavailable")
