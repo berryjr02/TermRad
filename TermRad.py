@@ -1,11 +1,11 @@
 from textual.app import App, ComposeResult
 from textual.screen import Screen
-from textual.widgets import Header, Footer, Button, Label, Static, Switch, RadioSet, RadioButton, LoadingIndicator
-from textual.containers import Container, Horizontal, Vertical, Center
+from textual.widgets import Header, Footer, Button, Label, Static, Switch, RadioSet, RadioButton, LoadingIndicator, Log
+from textual.containers import Container, Horizontal, Vertical, Center, ScrollableContainer
 from textual import work
 import json
 from radar_animator import get_radar_frames
-from weather_api import get_alerts, get_coords_auto
+from weather_api import get_alerts, get_coords_auto, write_log, get_numerical_forecast
 from datetime import datetime, timedelta
 
 with open('logo.txt', 'r') as file_handle:
@@ -14,6 +14,14 @@ with open('logo.txt', 'r') as file_handle:
 
 with open('mich.txt', 'r') as file_handle:
     MICHIGAN_MAP_PLACEHOLDER = file_handle.read()
+
+class HomeScreen(Screen):
+    """The main menu screen."""
+
+    BINDINGS = [
+        ("1", "go_forecast", "Michigan Forecast"),
+        ("2", "go_settings", "Config Settings")
+    ]
 
 class HomeScreen(Screen):
     """The main menu screen."""
@@ -44,13 +52,17 @@ class HomeScreen(Screen):
             self.app.switch_screen("settings")
 
     # --- Keyboard Action Handlers ---
-    def action_go_forecast(self) -> None:
+    def action_go_radar(self) -> None:
         self.app.switch_screen("radar")
         
     def action_go_settings(self) -> None:
         self.app.switch_screen("settings")
 
+    def action_go_forecast(self) -> None:
+        self.app.switch_screen("forecast")
+
     def on_mount(self) -> None:
+        # Load use_ip setting
         try:
             with open("settings.json", "r") as f:
                 settings = json.load(f)
@@ -62,6 +74,7 @@ class HomeScreen(Screen):
 
     def on_switch_changed(self, event: Switch.Changed) -> None:
         if event.switch.id == "use-ip":
+            # Save use_ip setting
             try:
                 with open("settings.json", "r") as f:
                     settings = json.load(f)
@@ -73,6 +86,34 @@ class HomeScreen(Screen):
             with open("settings.json", "w") as f:
                 json.dump(settings, f)
 
+class ForecastWidget(Static):
+    def __init__(self, period: dict, **kwargs):
+        super().__init__(**kwargs)
+        self.period = period
+
+    def render(self) -> str:
+        p = self.period
+        return f"[bold]{p['time']}[/bold]\n{p['temp']}°{p['unit']}\n{p['short_forecast']}\nWind: {p['wind']}\nPrecip: {p['precip']}"
+
+class ForecastScreen(Screen):
+    def compose(self) -> ComposeResult:
+        yield Header(show_clock=True)
+        yield ScrollableContainer(id="forecast_container")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        #this is hardcoded to flint right now for testing. 
+        forecast_data = get_numerical_forecast(43.0125, -83.6875)
+
+        #dynamically create forecast widget per recieved data 
+        forecast_widgets = [
+                ForecastWidget(period, id=f"forecast{i}", classes="forecast_item")
+                for i, period in enumerate(forecast_data)
+        ]
+
+        container = self.query_one("#forecast_container", ScrollableContainer)
+        container.mount(*forecast_widgets)
+    
 class RadarScreen(Screen):
     """The forecast and radar map screen."""
     
@@ -86,6 +127,8 @@ class RadarScreen(Screen):
                 yield Label(
                     id="alert-description"
                 )
+                yield Label("Latest Forecast:\n", id="forecast-title")
+                yield Static("", id="latest-forecast")
 
             # MAP w/ LEGEND Panel
             with Vertical(id="map-panel"):
@@ -167,6 +210,8 @@ class RadarScreen(Screen):
         
         self.alerts = get_alerts(lat, lon)
         
+        self.forecast_data = get_numerical_forecast(lat or 43.0125, lon or -83.6875)
+        
         # Once data is fetched, start the animation loop on the main UI thread
         self.app.call_from_thread(self.start_animation)
 
@@ -188,6 +233,14 @@ class RadarScreen(Screen):
         else:
             self.query_one("#alert-title").update("No Active Alerts")
             self.query_one("#alert-description").update("")
+        
+        # Update forecast
+        if hasattr(self, 'forecast_data') and self.forecast_data:
+            period = self.forecast_data[0]
+            forecast_text = f"[bold]{period['time']}[/bold]\n{period['temp']}°{period['unit']}\n{period['short_forecast']}\nWind: {period['wind']}\nPrecip: {period['precip']}"
+            self.query_one("#latest-forecast").update(forecast_text)
+        else:
+            self.query_one("#latest-forecast").update("Forecast unavailable")
         
         if not self.frames:
             self.query_one("#map-art", Static).update("Failed to load radar.")
@@ -304,6 +357,44 @@ class SettingsScreen(Screen):
         with open("settings.json", "w") as f:
             json.dump(settings, f)
 
+class LogScreen(Screen):
+
+    def compose(self) -> ComposeResult:
+        with Horizontal(id="log-container"):
+            yield Header(show_clock=True)
+            yield Log()
+            yield Footer()
+
+    def on_mount(self) -> None:
+        log = self.query_one(Log)
+        log.clear()
+        
+        self.last_read_position = 0
+        try:
+            with open("TermRad.log", "r") as f:
+                f.seek(self.last_read_position)
+                for line in f:
+                    log.write_line(line.rstrip())
+                self.last_read_position = f.tell()
+        except FileNotFoundError:
+            log.write_line("TermRad.log not found. No logs to display.")
+
+        self.set_interval(1, self.update_log_content)
+
+    def update_log_content(self) -> None:
+        log = self.query_one(Log)
+        try:
+            with open("TermRad.log", "r") as f:
+                f.seek(self.last_read_position)
+                new_content = f.read()
+                if new_content:
+                    for line in new_content.splitlines():
+                        log.write_line(line)
+                    self.last_read_position = f.tell()
+        except FileNotFoundError:
+            pass
+
+
 class TermRad(App):
     """A terminal radar and weather forecasting app."""
     CSS_PATH = "TermRadStyles.tcss"
@@ -312,33 +403,48 @@ class TermRad(App):
         ("ctrl+q", "quit", "Quit"),
         ("h", "home", "Home"), 
         ("r", "radar", "Radar"), 
-        ("f", "radar", "Forecast"), # Mapping 'f' to radar screen to match screenshots
-        ("s", "settings", "Settings"), 
+        ("f", "forecast", "Forecast"), 
+        ("ctrl+l", "log", "Log")
+        # ("s", "settings", "Settings"), 
         #("ctrl+s", "screenshot", "Screenshot"), 
         #("ctrl+a", "maximize", "Maximize")
     ]
+    
 
     def on_mount(self) -> None:
         # Register screens
         self.install_screen(HomeScreen(), name="home")
         self.install_screen(RadarScreen(), name="radar")
+        self.install_screen(ForecastScreen(), name="forecast")
         self.install_screen(SettingsScreen(), name="settings")
-
+        self.install_screen(LogScreen(), name="log")
         # Start on the home screen
         self.push_screen("home")
 
     # Action methods mapped to BINDINGS
     def action_quit(self) -> None:
+        write_log("Exiting...")
         self.exit()
     
     def action_home(self) -> None:
+        write_log("Switching to home screen...")
         self.switch_screen("home")
         
     def action_radar(self) -> None:
+        write_log("Switching to radar screen...")
         self.switch_screen("radar")
+
+    def action_forecast(self) -> None:
+        write_log("Switching to forecast screen...")
+        self.switch_screen("forecast")
         
     def action_settings(self) -> None:
+        write_log("Switching to settings screen...")
         self.switch_screen("settings")
+
+    def action_log(self) -> None:
+        write_log("Switching to log screen...")
+        self.switch_screen("log")
 
 if __name__ == "__main__":
     app = TermRad()
