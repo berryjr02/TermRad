@@ -1,0 +1,167 @@
+Screen {
+    background: #222222;
+    min-width: 100;     /* Enforces a minimum width to protect ASCII art */
+    min-height: 30;     /* Enforces a minimum height */
+    overflow: auto;     /* Adds scrollbars if the terminal window is too small */
+}
+
+Header, Footer {
+    background: #CC8E39;
+    color: white;
+}
+
+/* --- Home Screen --- */
+#home-container {
+    align: center middle; 
+    width: 100%;          
+    height: 100%;
+}
+
+#title-art {
+    width: auto;
+    margin-bottom: 2;
+}
+
+.menu-button {
+    width: 30;
+    margin-bottom: 1;
+    background: transparent;
+    border: none;
+}
+
+.menu-button:hover {
+    background: #333333;
+}
+
+#ip-switch-container {
+    width: 100%;          /* Forces the container to span the full screen */
+    align: center middle; /* Perfectly centers the Label and Switch inside the full-width row */
+    height: auto;
+    margin-top: 1;
+}
+
+#ip-switch-container Label {
+    margin-right: 2;
+    padding-top: 1;
+}
+
+/* --- Radar/Forecast Screen --- */
+#radar-container {
+    height: 100%;
+    padding: 2;
+}
+
+#alert-panel {
+    width: 35%;
+    height: 100%;
+    padding-right: 4;
+}
+
+#alert-title {
+    color: #FF5555;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#alert-description {
+    width: 100%;
+    color: #FFFFFF;
+}
+
+#map-panel {
+    width: 65%;
+    align: center top;
+}
+
+#map-art {
+    text-align: center;
+    height: auto;
+}
+
+#legend-label {
+    width: 100%;
+    text-align: center;
+    margin-top: 1;
+    margin-bottom: 1;
+}
+
+/* --- Legend Styles --- */
+#legend-container {
+    height: 3;        /* Reduced height for compact display */
+    width: 100%;
+    align: center middle;
+    margin-top: 1;
+    layout: horizontal;
+}
+
+.legend-swatch {
+    padding: 1 2;     /* Vertical and horizontal padding for visibility */
+    margin: 0 1;
+    text-style: bold;
+    text-align: center;
+    border: solid white;
+}
+
+/* Base Reflectivity Colors */
+.swatch-snow  { background: #00FFFF; color: black; } /* Cyan */
+.swatch-light { background: #00FF00; color: black; } /* Green */
+.swatch-mod   { background: #FFFF00; color: black; } /* Yellow */
+.swatch-heavy { background: #FF0000; color: white; } /* Red */
+.swatch-hail  { background: #FF00FF; color: white; } /* Magenta */
+.swatch-location { background: #FFFFFF; color: black; } /* White */
+
+/* --- Settings Screen --- */
+#settings-container {
+    align: center middle;
+    height: 100%;
+    layout: horizontal;
+}
+
+.settings-box {
+    width: 40;
+    height: 25;
+    background: #CC8E39;
+    color: white;
+    margin: 0 4;
+    padding: 2 4;
+}
+
+.settings-title {
+    text-style: bold;
+    margin-bottom: 2;
+}
+
+RadioSet {
+    background: transparent;
+    border: none;
+    margin-bottom: 2;
+}
+
+RadioButton {
+    color: white;
+}
+
+RadioButton:focus {
+    text-style: bold;
+}
+
+#forecast_container {
+    border: solid $primary;
+    width: 100%;
+    height: auto;
+    layout: grid;
+    /* grid-rows: auto; makes it so every forecast item takes up an entire row. I have not figured out how to neatly fit them all in a grid that maximizes screen space */
+    grid-rows: auto;
+    grid-gutter: 1 1;
+    padding: 1 2;
+}
+
+.forecast_item {
+    width: 1fr;
+    height: auto;
+    border: solid $accent;
+    padding: 1 2;
+    background: $panel;
+    color: $text;
+    text-align: center;
+}

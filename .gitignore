@@ -1,0 +1,5 @@
+*.json
+*.jog
+*.pyc
+debug_radar.png
+radar_error.log
