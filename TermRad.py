@@ -1,6 +1,6 @@
 from textual.app import App, ComposeResult, Binding
 from textual.screen import Screen
-from textual.widgets import Header, Footer, Button, Label, Static, Switch, RadioSet, RadioButton, LoadingIndicator, Log
+from textual.widgets import Header, Footer, Button, Label, Static, Switch, RadioSet, RadioButton, LoadingIndicator, Log, Input
 from textual.containers import Container, Horizontal, Vertical, Center, ScrollableContainer
 from textual.theme import Theme
 from textual import work
@@ -44,12 +44,6 @@ with open('mich.txt', 'r') as file_handle:
 
 class HomeScreen(Screen):
     """The main menu screen."""
-
-    BINDINGS = [
-        Binding("1", "go_radar", "Michigan Radar", show = False),
-        Binding("2", "go_forecast", "Michigan Forecast", show=False),
-        Binding("3", "go_settings", "Config Settings", show=False)
-    ]
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -131,8 +125,8 @@ class ForecastScreen(Screen):
         yield Footer()
 
     def on_mount(self) -> None:
-        #this is hardcoded to flint right now for testing. 
-        forecast_data = get_numerical_forecast(43.0125, -83.6875)
+        self.lat, self.lon, self.country = get_coords_auto()
+        forecast_data = get_numerical_forecast(self.lat, self.lon)  
         self.temperature_unit = get_temperature_unit()
 
         #dynamically create forecast widget per recieved data 
@@ -176,14 +170,14 @@ class RadarScreen(Screen):
                 # The Frame Counter (What your timer is updating)
                 yield Label("FRAME  [ ]", id="legend-label") 
                 
-                # The New Color Legend
-                with Horizontal(id="legend-container"):
-                    yield Label("Snow/Ice", classes="legend-swatch swatch-snow")
-                    yield Label("Light Rain", classes="legend-swatch swatch-light")
-                    yield Label("Mod Rain", classes="legend-swatch swatch-mod")
-                    yield Label("Heavy Rain", classes="legend-swatch swatch-heavy")
-                    yield Label("Hail/Extreme", classes="legend-swatch swatch-hail") 
-                    yield Label("Your Location", classes="legend-swatch swatch-location")                    
+            # The New Color Legend
+            with Vertical(id="legend-container"):
+                yield Label("Snow/Ice", classes="legend-swatch swatch-snow")
+                yield Label("Light Rain", classes="legend-swatch swatch-light")
+                yield Label("Mod Rain", classes="legend-swatch swatch-mod")
+                yield Label("Heavy Rain", classes="legend-swatch swatch-heavy")
+                yield Label("Hail/Extreme", classes="legend-swatch swatch-hail") 
+                yield Label("Your Location", classes="legend-swatch swatch-location")                    
         yield Footer()        
 
     def on_mount(self) -> None:
@@ -263,7 +257,7 @@ class RadarScreen(Screen):
         
         self.alerts = get_alerts(lat, lon)
         
-        self.forecast_data = get_numerical_forecast(lat or 43.0125, lon or -83.6875)
+        self.forecast_data = get_numerical_forecast(lat or self.lat, lon or self.lon)
         
         # Once data is fetched, start the animation loop on the main UI thread
         self.app.call_from_thread(self.start_animation)
