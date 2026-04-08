@@ -29,13 +29,13 @@ def get_temperature_unit():
 with open('mich.txt', 'r') as file_handle:
     MICHIGAN_MAP_PLACEHOLDER = file_handle.read()
 
-
 class HomeScreen(Screen):
     """The main menu screen."""
 
     BINDINGS = [
-        ("1", "go_forecast", "Michigan Forecast"),
-        ("2", "go_settings", "Config Settings")
+        ("1", "go_radar", "Michigan Radar"),
+        ("2", "go_forecast", "Michigan Forecast"),
+        ("3", "go_settings", "Config Settings")
     ]
 
     def compose(self) -> ComposeResult:
@@ -44,17 +44,21 @@ class HomeScreen(Screen):
             with Center(): # <--- This container mathematically forces the block to center
                 yield Static(ASCII_ART, id="title-art")
             with Center():
-                yield Button("1. Michigan Forecast", id="btn-forecast", variant="default", classes="menu-button")
+                yield Button("1. Michigan Radar", id="btn-radar", variant="default", classes="menu-button")
             with Center():
-                yield Button("2. Config Settings", id="btn-settings", variant="default", classes="menu-button")
+                yield Button("2. Michigan Forecast", id="btn-forecast", variant="default", classes="menu-button")
+            with Center():
+                yield Button("3. Config Settings", id="btn-settings", variant="default", classes="menu-button")
             with Horizontal(id="ip-switch-container"):
                 yield Label("Use IP:")
                 yield Switch(value=True, id="use-ip")                
         yield Footer()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "btn-forecast":
+        if event.button.id == "btn-radar":
             self.app.switch_screen("radar")
+        elif event.button.id == "btn-forecast":
+            self.app.switch_screen("forecast")
         elif event.button.id == "btn-settings":
             self.app.switch_screen("settings")
 

@@ -31,7 +31,6 @@ def fetch_json(url, desc):
         print(f"{desc} error! {e}")
         sys.exit(1)
 
-@lru_cache(maxsize=1)
 def get_coords_manual(user_location):
     url = (
         "https://nominatim.openstreetmap.org/search?"
