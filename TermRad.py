@@ -2,6 +2,7 @@ from textual.app import App, ComposeResult
 from textual.screen import Screen
 from textual.widgets import Header, Footer, Button, Label, Static, Switch, RadioSet, RadioButton, LoadingIndicator, Log
 from textual.containers import Container, Horizontal, Vertical, Center, ScrollableContainer
+from textual.theme import Theme
 from textual import work
 import json
 from radar_animator import get_radar_frames
@@ -9,6 +10,18 @@ from weather_api import get_alerts, get_coords_auto, write_log, get_numerical_fo
 from datetime import datetime, timedelta
 
 from functools import lru_cache
+
+termrad_theme = Theme(
+    name="termrad",
+    primary="#CC8E39",
+    secondary="#CC8E39",
+    accent="#CC8E39",
+    background="#222222",
+    surface="#333333",
+    error="#FF5555",
+    success="#00FF00",
+    warning="#FFFF00",
+)
 
 with open('logo.txt', 'r') as file_handle:
     ASCII_ART = file_handle.read()
@@ -431,6 +444,8 @@ class TermRad(App):
     
 
     def on_mount(self) -> None:
+        self.register_theme(termrad_theme)
+        self.theme = "termrad"
         # Register screens
         self.install_screen(HomeScreen(), name="home")
         self.install_screen(RadarScreen(), name="radar")
