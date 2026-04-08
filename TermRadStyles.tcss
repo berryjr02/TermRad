@@ -1,13 +1,14 @@
 Screen {
-    background: #222222;
+    background: $background;
     min-width: 100;     /* Enforces a minimum width to protect ASCII art */
     min-height: 30;     /* Enforces a minimum height */
     overflow: auto;     /* Adds scrollbars if the terminal window is too small */
+    color: $text;
 }
 
 Header, Footer {
-    background: #CC8E39;
-    color: white;
+    background: $primary;
+    color: $text;
 }
 
 /* --- Home Screen --- */
@@ -30,7 +31,7 @@ Header, Footer {
 }
 
 .menu-button:hover {
-    background: #333333;
+    background: $surface;
 }
 
 #ip-switch-container {
@@ -58,14 +59,14 @@ Header, Footer {
 }
 
 #alert-title {
-    color: #FF5555;
+    color: $error;
     text-style: bold;
     margin-bottom: 1;
 }
 
 #alert-description {
     width: 100%;
-    color: #FFFFFF;
+    color: $foreground;
 }
 
 #map-panel {
@@ -99,16 +100,16 @@ Header, Footer {
     margin: 0 1;
     text-style: bold;
     text-align: center;
-    border: solid white;
+    border: solid $foreground;
 }
 
 /* Base Reflectivity Colors */
 .swatch-snow  { background: #00FFFF; color: black; } /* Cyan */
-.swatch-light { background: #00FF00; color: black; } /* Green */
-.swatch-mod   { background: #FFFF00; color: black; } /* Yellow */
-.swatch-heavy { background: #FF0000; color: white; } /* Red */
-.swatch-hail  { background: #FF00FF; color: white; } /* Magenta */
-.swatch-location { background: #FFFFFF; color: black; } /* White */
+.swatch-light { background: $success; color: black; } /* Green */
+.swatch-mod   { background: $warning; color: black; } /* Yellow */
+.swatch-heavy { background: $error; color: $foreground; } /* Red */
+.swatch-hail  { background: #FF00FF; color: $foreground; } /* Magenta */
+.swatch-location { background: $foreground; color: black; } /* White */
 
 /* --- Settings Screen --- */
 #settings-container {
@@ -120,8 +121,8 @@ Header, Footer {
 .settings-box {
     width: 40;
     height: 25;
-    background: #CC8E39;
-    color: white;
+    background: $primary;
+    color: $foreground;
     margin: 0 4;
     padding: 2 4;
 }
@@ -138,7 +139,7 @@ RadioSet {
 }
 
 RadioButton {
-    color: white;
+    color: $foreground;
 }
 
 RadioButton:focus {
