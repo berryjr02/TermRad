@@ -1,6 +1,6 @@
 from textual.app import App, ComposeResult, Binding
 from textual.screen import Screen
-from textual.widgets import Header, Footer, Button, Label, Static, Switch, RadioSet, RadioButton, LoadingIndicator, Log
+from textual.widgets import Header, Footer, Button, Label, Static, Switch, RadioSet, RadioButton, LoadingIndicator, Log, Input
 from textual.containers import Container, Horizontal, Vertical, Center, ScrollableContainer
 from textual.theme import Theme
 from textual import work
@@ -176,14 +176,14 @@ class RadarScreen(Screen):
                 # The Frame Counter (What your timer is updating)
                 yield Label("FRAME  [ ]", id="legend-label") 
                 
-                # The New Color Legend
-                with Horizontal(id="legend-container"):
-                    yield Label("Snow/Ice", classes="legend-swatch swatch-snow")
-                    yield Label("Light Rain", classes="legend-swatch swatch-light")
-                    yield Label("Mod Rain", classes="legend-swatch swatch-mod")
-                    yield Label("Heavy Rain", classes="legend-swatch swatch-heavy")
-                    yield Label("Hail/Extreme", classes="legend-swatch swatch-hail") 
-                    yield Label("Your Location", classes="legend-swatch swatch-location")                    
+            # The New Color Legend
+            with Vertical(id="legend-container"):
+                yield Label("Snow/Ice", classes="legend-swatch swatch-snow")
+                yield Label("Light Rain", classes="legend-swatch swatch-light")
+                yield Label("Mod Rain", classes="legend-swatch swatch-mod")
+                yield Label("Heavy Rain", classes="legend-swatch swatch-heavy")
+                yield Label("Hail/Extreme", classes="legend-swatch swatch-hail") 
+                yield Label("Your Location", classes="legend-swatch swatch-location")                    
         yield Footer()        
 
     def on_mount(self) -> None:
