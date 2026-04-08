@@ -4,9 +4,46 @@ from io import BytesIO
 from PIL import Image
 from rich.text import Text
 from datetime import datetime, timedelta, timezone
+from weather_api import write_log
+from functools import lru_cache
 
 # Michigan's rough bounding box (West, South, East, North) - specifically for the Lower Peninsula!
 MICHIGAN_BBOX = "-87.00,41.69,-82.50,45.80"
+
+@lru_cache(maxsize=10)
+def process_radar_image(img_bytes, padded_lines_tuple, highlight_coord=None):
+    """Processes a raw image byte string and converts it to a Rich Text object."""
+    img = Image.open(BytesIO(img_bytes)).convert("RGBA")
+    width, height = img.size
+    text = Text()
+
+    for y in range(height):
+        for x in range(width):
+            char = padded_lines_tuple[y][x]
+            r, g, b, a = img.getpixel((x, y))
+            style = ""
+            
+            # If there's radar data, set the background color
+            if a >= 50:
+                style = f"on #{r:02x}{g:02x}{b:02x}"
+
+            # Apply the location highlight OVER the map
+            if highlight_coord:
+                hx, hy = highlight_coord
+                if x == hx and y == hy or (hx - 1 <= x <= hx + 1 and hy - 1 <= y <= hy + 1):
+                    char = "X"
+                    style = "bold black on #FFFFFF"
+
+            # Append the character with the determined style
+            if style:
+                text.append(char, style=style)
+            else:
+                text.append(char)
+                
+        if y < height - 1:
+            text.append("\n")
+            
+    return text
 
 def latlon_to_pixel(lat, lon, bbox_str, width, height):
     """Converts a latitude and longitude to a pixel coordinate."""
@@ -85,43 +122,16 @@ def get_radar_frames(ascii_map_string, num_frames=5, highlight_lat=None, highlig
             response = requests.get(base_url, params=params, timeout=10)
             if response.status_code == 200:
                 if "image" in response.headers.get("Content-Type", ""):
-                    img = Image.open(BytesIO(response.content)).convert("RGBA")
-                    frames.append(img)
+                    # Store raw bytes for caching
+                    frames.append(response.content)
         except Exception as e:
-            pass # Fails gracefully if network drops
+            write_log(f"Radar fetch error: {e}") # Log if network drops or API fails
 
     # 3. Process pixels and build Rich Text frames
     rich_frames = []
-    for img in frames:
-        text = Text()
-        for y in range(height):
-            for x in range(width):
-                char = padded_lines[y][x]
-
-                r, g, b, a = img.getpixel((x, y))
-                style = ""
-                
-                # If there's radar data, set the background color
-                if a >= 50:
-                    style = f"on #{r:02x}{g:02x}{b:02x}"
-
-                # Apply the location highlight OVER the map
-                if highlight_coord:
-                    hx, hy = highlight_coord
-                    if x == hx and y == hy or (hx - 1 <= x <= hx + 1 and hy - 1 <= y <= hy + 1):
-                        char = "X"
-                        style = "bold black on #FFFFFF"
-
-                # Append the character with the determined style
-                if style:
-                    text.append(char, style=style)
-                else:
-                    text.append(char)
-                    
-            if y < height - 1:
-                text.append("\n")
-                
-        rich_frames.append(text) 
+    padded_lines_tuple = tuple(padded_lines) # Tuples are hashable for lru_cache
+    for img_bytes in frames:
+        rich_frames.append(process_radar_image(img_bytes, padded_lines_tuple, highlight_coord)) 
     
     if not rich_frames:
         return [Text(ascii_map_string)]

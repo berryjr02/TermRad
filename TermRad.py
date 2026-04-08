@@ -8,9 +8,12 @@ from radar_animator import get_radar_frames
 from weather_api import get_alerts, get_coords_auto, write_log, get_numerical_forecast
 from datetime import datetime, timedelta
 
+from functools import lru_cache
+
 with open('logo.txt', 'r') as file_handle:
     ASCII_ART = file_handle.read()
 
+@lru_cache(maxsize=1)
 def get_temperature_unit():
     """Load the temperature unit preference from settings.json."""
     try:
@@ -26,13 +29,6 @@ def get_temperature_unit():
 with open('mich.txt', 'r') as file_handle:
     MICHIGAN_MAP_PLACEHOLDER = file_handle.read()
 
-class HomeScreen(Screen):
-    """The main menu screen."""
-
-    BINDINGS = [
-        ("1", "go_forecast", "Michigan Forecast"),
-        ("2", "go_settings", "Config Settings")
-    ]
 
 class HomeScreen(Screen):
     """The main menu screen."""
@@ -376,6 +372,9 @@ class SettingsScreen(Screen):
         
         with open("settings.json", "w") as f:
             json.dump(settings, f)
+        
+        # Clear cache so the UI updates immediately
+        get_temperature_unit.cache_clear()
 
 class LogScreen(Screen):
 

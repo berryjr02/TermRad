@@ -2,12 +2,22 @@ import sys
 import time
 import datetime
 import requests
+import logging
 from functools import lru_cache
+
+# Configure logging
+logging.basicConfig(
+    filename="TermRad.log",
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
+logger = logging.getLogger("TermRad")
 
 @lru_cache(maxsize=6)
 def fetch_json(url, desc):
     headers = {
-    "User-Agent": "TermRad",
+    "User-Agent": "TermRad Terminal Weather App (https://github.com/berryjr02/TermRad)",
     "Accept": "application/json"
     }
     try:
@@ -21,6 +31,7 @@ def fetch_json(url, desc):
         print(f"{desc} error! {e}")
         sys.exit(1)
 
+@lru_cache(maxsize=1)
 def get_coords_manual(user_location):
     url = (
         "https://nominatim.openstreetmap.org/search?"
@@ -32,7 +43,7 @@ def get_coords_manual(user_location):
 
     return str(data["lat"]), str(data["lon"]), str(country)
 
-
+@lru_cache(maxsize=1)
 def get_coords_auto():
     data = fetch_json("http://ipinfo.io/json", "IP geolocation")
     lat, lon = data["loc"].split(",")
@@ -47,20 +58,21 @@ def get_point_metadata(lat, lon):
     print(f"Fetching point metadata from NWS for {lat}, {lon} with URL: {url}")
     return fetch_json(url, "NWS location data")
 
-
+@lru_cache(maxsize=1)
 def get_alerts(lat, lon):
     if lat is None or lon is None:
         return {"features": []}  # Return empty alerts if location is unknown
     url = f"https://api.weather.gov/alerts/active?point={lat},{lon}"
     return fetch_json(url, "NWS alerts")
 
-
+@lru_cache(maxsize=1)
 def get_forecast(lat, lon):
     if lat is None or lon is None:
         return []  # Return empty forecast if location is unknown
     return fetch_json(get_point_metadata(lat, lon)["properties"]["forecast"], "NWS forecast")
 
 
+@lru_cache(maxsize=2)
 def get_numerical_forecast(lat, lon):
     if lat is None or lon is None:
         return []  # Return empty forecast if location is unknown
@@ -88,6 +100,4 @@ def get_numerical_forecast(lat, lon):
     return forecast_list
 
 def write_log(message):
-    with open("TermRad.log", "a") as f:
-        message = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S") + ": " + message
-        f.write(f"{message}\n")
+    logger.info(message)

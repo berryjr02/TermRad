@@ -150,8 +150,7 @@ RadioButton:focus {
     width: 100%;
     height: auto;
     layout: grid;
-    /* grid-rows: auto; makes it so every forecast item takes up an entire row. I have not figured out how to neatly fit them all in a grid that maximizes screen space */
-    grid-rows: auto;
+    grid-size: 2; /* 4 columns for desktop-like widths */
     grid-gutter: 1 1;
     padding: 1 2;
 }
