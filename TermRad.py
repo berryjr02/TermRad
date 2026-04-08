@@ -26,13 +26,6 @@ def get_temperature_unit():
 with open('mich.txt', 'r') as file_handle:
     MICHIGAN_MAP_PLACEHOLDER = file_handle.read()
 
-class HomeScreen(Screen):
-    """The main menu screen."""
-
-    BINDINGS = [
-        ("1", "go_forecast", "Michigan Forecast"),
-        ("2", "go_settings", "Config Settings")
-    ]
 
 class HomeScreen(Screen):
     """The main menu screen."""
@@ -110,7 +103,7 @@ class ForecastWidget(Static):
             return f"[bold]{p['time']}[/bold]\n{temp_c}°{unit}\n{p['short_forecast']}\nWind: {p['wind']}\nPrecip: {p['precip']}"
         else:
             return f"[bold]{p['time']}[/bold]\n{p['temp']}°{unit}\n{p['short_forecast']}\nWind: {p['wind']}\nPrecip: {p['precip']}"
-
+    
 class ForecastScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -120,6 +113,7 @@ class ForecastScreen(Screen):
     def on_mount(self) -> None:
         #this is hardcoded to flint right now for testing. 
         forecast_data = get_numerical_forecast(43.0125, -83.6875)
+        self.temperature_unit = get_temperature_unit()
 
         #dynamically create forecast widget per recieved data 
         forecast_widgets = [
@@ -129,6 +123,14 @@ class ForecastScreen(Screen):
 
         container = self.query_one("#forecast_container", ScrollableContainer)
         container.mount(*forecast_widgets)
+    
+    def on_screen_resume(self):
+        new_temperature_unit = get_temperature_unit()
+        if new_temperature_unit != self.temperature_unit:
+            self.temperature_unit = new_temperature_unit
+            # Update all forecast widgets with the new temperature unit
+            for widget in self.query(ForecastWidget):
+                widget.refresh()
     
 class RadarScreen(Screen):
     """The forecast and radar map screen."""
@@ -182,7 +184,9 @@ class RadarScreen(Screen):
         
         # Get coordinates
         use_ip_setting = settings.get("use_ip", True)
-        self.current_use_ip = use_ip_setting # <-- ADD THIS LINE TO TRACK IT
+        self.current_use_ip = use_ip_setting 
+
+        self.temperature_unit = get_temperature_unit()
         
         if use_ip_setting in [True, "true", "True"]:
             self.lat, self.lon, self.country = get_coords_auto()
@@ -198,6 +202,19 @@ class RadarScreen(Screen):
             settings = {}
             
         new_use_ip = settings.get("use_ip", True)
+
+        new_temperature = get_temperature_unit()
+        if new_temperature != self.temperature_unit:
+            self.temperature_unit = new_temperature
+            # If the temperature unit changed, we can just update the forecast text without re-fetching data
+            if hasattr(self, 'forecast_data') and self.forecast_data:
+                period = self.forecast_data[0]
+                temp = period['temp']
+                if self.temperature_unit == "C":
+                    temp = round((temp - 32) * (5.0 / 9.0), 1)
+                forecast_text = f"[bold]{period['time']}[/bold]\n{temp}°{self.temperature_unit}\n{period['short_forecast']}\nWind: {period['wind']}\nPrecip: {period['precip']}"
+                self.query_one("#latest-forecast").update(forecast_text) 
+
         
         # If the IP setting changed while we were away, we MUST re-render
         if new_use_ip != self.current_use_ip:
