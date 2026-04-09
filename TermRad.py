@@ -39,6 +39,19 @@ def get_temperature_unit():
     return "C" if temp_pref == "Celsius" else "F"
 
 
+@lru_cache(maxsize=1)
+def get_time_format():
+    """Load the time format preference from settings.json."""
+    try:
+        with open("settings.json", "r") as f:
+            settings = json.load(f)
+    except FileNotFoundError:
+        settings = {}
+    
+    time_pref = settings.get("time_format", "12 hour")
+    return "24" if time_pref == "24 hour" else "12"
+
+
 with open('mich.txt', 'r') as file_handle:
     MICHIGAN_MAP_PLACEHOLDER = file_handle.read()
 
@@ -201,6 +214,7 @@ class RadarScreen(Screen):
         self.current_use_ip = use_ip_setting 
 
         self.temperature_unit = get_temperature_unit()
+        self.time_format = get_time_format()
         
         if use_ip_setting in [True, "true", "True"]:
             self.lat, self.lon, self.country = get_coords_auto()
@@ -228,6 +242,10 @@ class RadarScreen(Screen):
                     temp = round((temp - 32) * (5.0 / 9.0), 1)
                 forecast_text = f"[bold]{period['time']}[/bold]\n{temp}°{self.temperature_unit}\n{period['short_forecast']}\nWind: {period['wind']}\nPrecip: {period['precip']}"
                 self.query_one("#latest-forecast").update(forecast_text) 
+
+        new_time_format = get_time_format()
+        if new_time_format != self.time_format:
+            self.time_format = new_time_format
 
         
         # If the IP setting changed while we were away, we MUST re-render
@@ -312,8 +330,12 @@ class RadarScreen(Screen):
             frames_from_newest = (len(self.frames) - 1) - self.current_frame_index
             frame_time = self.base_time - timedelta(minutes=frames_from_newest * 15)
             
-            # Format to 12-hour time (e.g., "4:15 PM"). The lstrip("0") removes leading zeros.
-            time_str = frame_time.strftime("%I:%M %p").lstrip("0")
+            # Format time based on user preference
+            time_format = get_time_format()
+            if time_format == "24":
+                time_str = frame_time.strftime("%H:%M")
+            else:
+                time_str = frame_time.strftime("%I:%M %p").lstrip("0")
             
             # Update the legend with the time!
             legend = self.query_one("#legend-label", Label)
@@ -335,13 +357,10 @@ class SettingsScreen(Screen):
                     yield RadioButton("Celsius")
             
             with Vertical(classes="settings-box"):
-                yield Label("Time and Date Format", classes="settings-title")
+                yield Label("Time Format", classes="settings-title")
                 with RadioSet(id="time-format"):
                     yield RadioButton("24 hour")
                     yield RadioButton("12 hour", value=True)
-                with RadioSet(id="date-format"):
-                    yield RadioButton("ISO Date")
-                    yield RadioButton("Standard Date", value=True)
         yield Footer()
 
     def on_mount(self) -> None:
@@ -368,13 +387,6 @@ class SettingsScreen(Screen):
                 radio.value = True
                 break
         
-        # Set date format
-        date_radio = self.query_one("#date-format", RadioSet)
-        date_value = settings.get("date_format", "Standard Date")
-        for radio in date_radio.children:
-            if radio.label.plain == date_value:
-                radio.value = True
-                break
 
     def on_radio_set_changed(self, event: RadioSet.Changed) -> None:
         # Save settings
@@ -398,18 +410,12 @@ class SettingsScreen(Screen):
                 settings["time_format"] = radio.label.plain
                 break
         
-        # Get date format
-        date_radio = self.query_one("#date-format", RadioSet)
-        for radio in date_radio.children:
-            if radio.value:
-                settings["date_format"] = radio.label.plain
-                break
-        
         with open("settings.json", "w") as f:
             json.dump(settings, f)
         
         # Clear cache so the UI updates immediately
         get_temperature_unit.cache_clear()
+        get_time_format.cache_clear()
 
 class LogScreen(Screen):
 

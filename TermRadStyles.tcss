@@ -124,8 +124,8 @@ Header, Footer {
 }
 
 .settings-box {
-    width: 40;
-    height: 25;
+    width: 25;
+    height: 10;
     background: $primary;
     color: $foreground;
     margin: 0 4;
