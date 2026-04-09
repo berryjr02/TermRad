@@ -70,7 +70,7 @@ Header, Footer {
 }
 
 #map-panel {
-    width: 55%;
+    width: 53%;
     align: center middle;
 }
 
@@ -88,7 +88,7 @@ Header, Footer {
 
 /* --- Legend Styles --- */
 #legend-container {
-    width: 10%;
+    width: 12%;
     align: center middle;
     margin-top: 1;
 }
@@ -105,7 +105,7 @@ Header, Footer {
     text-style: bold;
     text-align: center;
     border: solid $foreground;
-    width: 20
+    width: 100%
 }
 
 /* Base Reflectivity Colors */

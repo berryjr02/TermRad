@@ -1,13 +1,14 @@
 from textual.app import App, ComposeResult, Binding
 from textual.screen import Screen
 from textual.widgets import Header, Footer, Button, Label, Static, Switch, RadioSet, RadioButton, LoadingIndicator, Log, Input
-from textual.containers import Container, Horizontal, Vertical, Center, ScrollableContainer
+from textual.containers import Horizontal, Vertical, Center, ScrollableContainer
 from textual.theme import Theme
 from textual import work
 import json
 from radar_animator import get_radar_frames
 from weather_api import get_alerts, get_coords_auto, write_log, get_numerical_forecast, get_coords_manual
 from datetime import datetime, timedelta
+import concurrent.futures
 
 from functools import lru_cache
 
@@ -172,7 +173,7 @@ class RadarScreen(Screen):
         self.current_zip_code = settings.get("zip_code", "")
         self.temperature_unit = get_temperature_unit()
         
-        self.fetch_coords_and_data(self.current_use_ip, self.current_zip_code)
+        self.fetch_all_data(self.current_use_ip, self.current_zip_code)
 
     def on_screen_resume(self) -> None:
         """Called automatically every time the screen becomes active again."""
@@ -210,30 +211,31 @@ class RadarScreen(Screen):
             self.query_one("#loading").display = True
             self.query_one("#map-art").display = False
                 
-            self.fetch_coords_and_data(new_use_ip, new_zip_code)
+            self.fetch_all_data(new_use_ip, new_zip_code)
 
-    @work(thread=True) 
-    def fetch_coords_and_data(self, use_ip, zip_code) -> None:
-        """Fetches coordinates in the background so the UI doesn't freeze."""
+    @work(thread=True, exclusive=True) # exclusive=True prevents duplicate tasks from piling up
+    def fetch_all_data(self, use_ip, zip_code) -> None:
+        """Fetches coordinates, then fetches all API data simultaneously."""
         if use_ip in [True, "true", "True"]:
             self.lat, self.lon, self.country = get_coords_auto()
         elif zip_code and zip_code != "":
             self.lat, self.lon, self.country = get_coords_manual(zip_code)
         else:
             self.lat, self.lon, self.country = None, None, None
-            
-        # Now that we safely have coordinates, trigger the radar fetch
-        self.fetch_radar_data(self.lat, self.lon)
 
-    @work(thread=True) 
-    def fetch_radar_data(self, lat, lon) -> None:
-        self.frames = get_radar_frames(MICHIGAN_MAP_PLACEHOLDER, num_frames=5, highlight_lat=lat, highlight_lon=lon)
-        
-        self.alerts = get_alerts(lat, lon)
-        
-        self.forecast_data = get_numerical_forecast(lat or self.lat, lon or self.lon)
-        
-        # Once data is fetched, start the animation loop on the main UI thread
+        # 2. Fetch the rest of the data concurrently (at the same time!)
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            # Launch all three network requests simultaneously
+            future_frames = executor.submit(get_radar_frames, MICHIGAN_MAP_PLACEHOLDER, num_frames=5, highlight_lat=self.lat, highlight_lon=self.lon)
+            future_alerts = executor.submit(get_alerts, self.lat, self.lon)
+            future_forecast = executor.submit(get_numerical_forecast, self.lat or 43.0125, self.lon or -83.6875)
+
+            # Wait for them all to finish and grab their results
+            self.frames = future_frames.result()
+            self.alerts = future_alerts.result()
+            self.forecast_data = future_forecast.result()
+            
+        # 3. Once all data is fetched, start the animation loop on the main UI thread
         self.app.call_from_thread(self.start_animation)
 
     def start_animation(self) -> None:
@@ -493,13 +495,13 @@ class TermRad(App):
     def on_mount(self) -> None:
         self.register_theme(termrad_theme)
         self.theme = "termrad"
-        # Register screens
+
         self.install_screen(HomeScreen(), name="home")
         self.install_screen(RadarScreen(), name="radar")
         self.install_screen(ForecastScreen(), name="forecast")
         self.install_screen(SettingsScreen(), name="settings")
         self.install_screen(LogScreen(), name="log")
-        # Start on the home screen
+
         self.push_screen("home")
 
     # Action methods mapped to BINDINGS
