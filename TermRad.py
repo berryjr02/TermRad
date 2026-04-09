@@ -6,7 +6,7 @@ from textual.theme import Theme
 from textual import work
 import json
 from radar_animator import get_radar_frames
-from weather_api import get_alerts, get_coords_auto, write_log, get_numerical_forecast
+from weather_api import get_alerts, get_coords_auto, write_log, get_numerical_forecast, get_coords_manual
 from datetime import datetime, timedelta
 
 from functools import lru_cache
@@ -56,9 +56,6 @@ class HomeScreen(Screen):
                 yield Button("2. Michigan Forecast", id="btn-forecast", variant="default", classes="menu-button")
             with Center():
                 yield Button("3. Config Settings", id="btn-settings", variant="default", classes="menu-button")
-            with Horizontal(id="ip-switch-container"):
-                yield Label("Use IP:")
-                yield Switch(value=True, id="use-ip")                
         yield Footer()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -78,31 +75,7 @@ class HomeScreen(Screen):
 
     def action_go_forecast(self) -> None:
         self.app.switch_screen("forecast")
-
-    def on_mount(self) -> None:
-        # Load use_ip setting
-        try:
-            with open("settings.json", "r") as f:
-                settings = json.load(f)
-        except FileNotFoundError:
-            settings = {}
         
-        use_ip = settings.get("use_ip", True)
-        self.query_one("#use-ip", Switch).value = use_ip
-
-    def on_switch_changed(self, event: Switch.Changed) -> None:
-        if event.switch.id == "use-ip":
-            # Save use_ip setting
-            try:
-                with open("settings.json", "r") as f:
-                    settings = json.load(f)
-            except FileNotFoundError:
-                settings = {}
-            
-            settings["use_ip"] = event.value
-            
-            with open("settings.json", "w") as f:
-                json.dump(settings, f)
 
 class ForecastWidget(Static):
     def __init__(self, period: dict, **kwargs):
@@ -190,22 +163,16 @@ class RadarScreen(Screen):
         except FileNotFoundError:
             settings = {}
         
-        # Show loading, hide map initially
         self.query_one("#loading").display = True
         self.query_one("#map-art").display = False
         
         self.lat, self.lon, self.country = None, None, None
         
-        # Get coordinates
-        use_ip_setting = settings.get("use_ip", True)
-        self.current_use_ip = use_ip_setting 
-
+        self.current_use_ip = settings.get("use_ip", True)
+        self.current_zip_code = settings.get("zip_code", "")
         self.temperature_unit = get_temperature_unit()
         
-        if use_ip_setting in [True, "true", "True"]:
-            self.lat, self.lon, self.country = get_coords_auto()
-        
-        self.fetch_radar_data(self.lat, self.lon)
+        self.fetch_coords_and_data(self.current_use_ip, self.current_zip_code)
 
     def on_screen_resume(self) -> None:
         """Called automatically every time the screen becomes active again."""
@@ -216,11 +183,11 @@ class RadarScreen(Screen):
             settings = {}
             
         new_use_ip = settings.get("use_ip", True)
-
+        new_zip_code = settings.get("zip_code", "")
         new_temperature = get_temperature_unit()
+
         if new_temperature != self.temperature_unit:
             self.temperature_unit = new_temperature
-            # If the temperature unit changed, we can just update the forecast text without re-fetching data
             if hasattr(self, 'forecast_data') and self.forecast_data:
                 period = self.forecast_data[0]
                 temp = period['temp']
@@ -229,29 +196,36 @@ class RadarScreen(Screen):
                 forecast_text = f"[bold]{period['time']}[/bold]\n{temp}°{self.temperature_unit}\n{period['short_forecast']}\nWind: {period['wind']}\nPrecip: {period['precip']}"
                 self.query_one("#latest-forecast").update(forecast_text) 
 
+        ip_changed = new_use_ip != self.current_use_ip
+        zip_changed = new_zip_code != self.current_zip_code
         
-        # If the IP setting changed while we were away, we MUST re-render
-        if new_use_ip != self.current_use_ip:
+        if ip_changed or zip_changed:
             self.current_use_ip = new_use_ip
+            self.current_zip_code = new_zip_code
             
-            # Stop the old animation
             if self.animation_timer:
                 self.animation_timer.stop()
+                self.animation_timer = None
                 
-            # Show loading indicator again
             self.query_one("#loading").display = True
             self.query_one("#map-art").display = False
-            
-            # Get new coordinates based on the new setting
-            if new_use_ip in [True, "true", "True"]:
-                self.lat, self.lon, self.country = get_coords_auto()
-            else:
-                self.lat, self.lon, self.country = None, None, None
                 
-            # Fetch new data!
-            self.fetch_radar_data(self.lat, self.lon)
+            self.fetch_coords_and_data(new_use_ip, new_zip_code)
 
-    @work(thread=True) # Runs in a background thread
+    @work(thread=True) 
+    def fetch_coords_and_data(self, use_ip, zip_code) -> None:
+        """Fetches coordinates in the background so the UI doesn't freeze."""
+        if use_ip in [True, "true", "True"]:
+            self.lat, self.lon, self.country = get_coords_auto()
+        elif zip_code and zip_code != "":
+            self.lat, self.lon, self.country = get_coords_manual(zip_code)
+        else:
+            self.lat, self.lon, self.country = None, None, None
+            
+        # Now that we safely have coordinates, trigger the radar fetch
+        self.fetch_radar_data(self.lat, self.lon)
+
+    @work(thread=True) 
     def fetch_radar_data(self, lat, lon) -> None:
         self.frames = get_radar_frames(MICHIGAN_MAP_PLACEHOLDER, num_frames=5, highlight_lat=lat, highlight_lon=lon)
         
@@ -333,6 +307,15 @@ class SettingsScreen(Screen):
                 with RadioSet(id="temp-format"):
                     yield RadioButton("Fahrenheit", value=True)
                     yield RadioButton("Celsius")
+                
+                with Horizontal(id="ip-switch-container"):
+                    yield Label("Use IP:")
+                    # FIX 1: Remove the hardcoded value=True so it defaults to off
+                    yield Switch(id="use-ip")  
+                    
+                yield Label("Enter Zip Code")
+                yield Input(placeholder="Zip Code", id="zip-code-input")
+                yield Button("Save Zip Code", id="save-zip-btn")
             
             with Vertical(classes="settings-box"):
                 yield Label("Time and Date Format", classes="settings-title")
@@ -375,6 +358,16 @@ class SettingsScreen(Screen):
             if radio.label.plain == date_value:
                 radio.value = True
                 break
+        
+        # FIX 2: Default this to False instead of True if there's no saved setting
+        use_ip = settings.get("use_ip", False) 
+        
+        # FIX 3: Remove the 'not' so it matches the logic in on_switch_changed.
+        # If use_ip is True, disabled becomes True.
+        self.query_one("#zip-code-input", Input).disabled = use_ip
+        self.query_one("#save-zip-btn", Button).disabled = use_ip
+        self.query_one("#use-ip", Switch).value = use_ip
+
 
     def on_radio_set_changed(self, event: RadioSet.Changed) -> None:
         # Save settings
@@ -411,6 +404,38 @@ class SettingsScreen(Screen):
         # Clear cache so the UI updates immediately
         get_temperature_unit.cache_clear()
 
+    def on_switch_changed(self, event: Switch.Changed) -> None:
+        if event.switch.id == "use-ip":
+            # Save use_ip setting
+            try:
+                with open("settings.json", "r") as f:
+                    settings = json.load(f)
+            except FileNotFoundError:
+                settings = {}
+            
+            settings["use_ip"] = event.value
+            
+            with open("settings.json", "w") as f:
+                json.dump(settings, f)
+            
+        self.query_one("#zip-code-input", Input).disabled = event.value
+        self.query_one("#save-zip-btn", Button).disabled = event.value
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "save-zip-btn":
+            zip_code = self.query_one("#zip-code-input", Input).value
+
+            try:
+                with open("settings.json", "r") as f:
+                    settings = json.load(f)
+            except FileNotFoundError:
+                settings = {}
+            
+            settings["zip_code"] = zip_code
+            
+            with open("settings.json", "w") as f:
+                json.dump(settings, f)
+            
 class LogScreen(Screen):
 
     def compose(self) -> ComposeResult:
