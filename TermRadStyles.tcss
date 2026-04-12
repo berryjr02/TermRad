@@ -33,20 +33,14 @@ Header, Footer {
 .menu-button:hover {
     background: $surface;
 }
-
-#ip-switch-container {
-    width: 100%;          /* Forces the container to span the full screen */
-    align: center middle; /* Perfectly centers the Label and Switch inside the full-width row */
-    height: auto;
-    margin-top: 1;
+#location-method {
+    margin-bottom: 2;
 }
 
-#ip-switch-container Label {
-    margin-right: 2;
-    padding-top: 1;
+.settings-title {
+    text-style: bold;
+    margin-bottom: 2;
 }
-
-/* --- Radar/Forecast Screen --- */
 #radar-container {
     height: 100%;
     padding: 2;
@@ -124,8 +118,9 @@ Header, Footer {
 }
 
 .settings-box {
-    width: 25;
-    height: 10;
+    width: 40;
+    height: auto;
+    min-height: 25;
     background: $primary;
     color: $foreground;
     margin: 0 4;

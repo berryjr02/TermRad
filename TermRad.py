@@ -22,35 +22,52 @@ termrad_theme = Theme(
     error="#FF5555",
     success="#00FF00",
     warning="#FFFF00",
+    text="#FFFFFF",
+    foreground="#FFFFFF",
 )
 
 with open('logo.txt', 'r') as file_handle:
     ASCII_ART = file_handle.read()
 
 @lru_cache(maxsize=1)
-def get_temperature_unit():
-    """Load the temperature unit preference from settings.json."""
+def get_settings():
+    """Load settings from settings.json."""
     try:
         with open("settings.json", "r") as f:
-            settings = json.load(f)
-    except FileNotFoundError:
-        settings = {}
-    
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+def get_temperature_unit():
+    """Get the temperature unit preference."""
+    settings = get_settings()
     temp_pref = settings.get("temperature", "Fahrenheit")
     return "C" if temp_pref == "Celsius" else "F"
 
-
-@lru_cache(maxsize=1)
 def get_time_format():
-    """Load the time format preference from settings.json."""
-    try:
-        with open("settings.json", "r") as f:
-            settings = json.load(f)
-    except FileNotFoundError:
-        settings = {}
-    
+    """Get the time format preference."""
+    settings = get_settings()
     time_pref = settings.get("time_format", "12 hour")
     return "24" if time_pref == "24 hour" else "12"
+
+def get_app_coordinates():
+    """Get coordinates based on current app settings."""
+    settings = get_settings()
+    use_ip = settings.get("use_ip", True)
+    zip_code = settings.get("zip_code", "")
+
+    if use_ip in [True, "true", "True"]:
+        return get_coords_auto()
+    elif zip_code:
+        return get_coords_manual(zip_code)
+    return None, None, None
+
+def convert_temp(temp_f, unit):
+    """Convert Fahrenheit to the specified unit."""
+    if unit == "C":
+        return round((temp_f - 32) * (5.0 / 9.0), 1)
+    return temp_f
+
 
 
 with open('mich.txt', 'r') as file_handle:
@@ -99,11 +116,8 @@ class ForecastWidget(Static):
     def render(self) -> str:
         p = self.period
         unit = get_temperature_unit()
-        if unit == "C":
-            temp_c = round((p['temp'] - 32) * (5.0 / 9.0), 1)
-            return f"[bold]{p['time']}[/bold]\n{temp_c}°{unit}\n{p['short_forecast']}\nWind: {p['wind']}\nPrecip: {p['precip']}"
-        else:
-            return f"[bold]{p['time']}[/bold]\n{p['temp']}°{unit}\n{p['short_forecast']}\nWind: {p['wind']}\nPrecip: {p['precip']}"
+        temp = convert_temp(p['temp'], unit)
+        return f"[bold]{p['time']}[/bold]\n{temp}°{unit}\n{p['short_forecast']}\nWind: {p['wind']}\nPrecip: {p['precip']}"
     
 class ForecastScreen(Screen):
     def compose(self) -> ComposeResult:
@@ -115,29 +129,13 @@ class ForecastScreen(Screen):
         self.load_and_fetch()
 
     def load_and_fetch(self) -> None:
-        try:
-            with open("settings.json", "r") as f:
-                settings = json.load(f)
-        except FileNotFoundError:
-            settings = {}
-        
-        use_ip = settings.get("use_ip", True)
-        zip_code = settings.get("zip_code", "")
-        
-        if use_ip in [True, "true", "True"]:
-            self.lat, self.lon, self.country = get_coords_auto()
-        elif zip_code and zip_code != "":
-            self.lat, self.lon, self.country = get_coords_manual(zip_code)
-        else:
-            self.lat, self.lon, self.country = None, None, None
-
+        self.lat, self.lon, self.country = get_app_coordinates()
         forecast_data = get_numerical_forecast(self.lat, self.lon)  
         self.temperature_unit = get_temperature_unit()
 
         # Clear existing widgets
         container = self.query_one("#forecast_container", ScrollableContainer)
-        for widget in container.query(ForecastWidget):
-            widget.remove()
+        container.query(ForecastWidget).remove()
 
         # dynamically create forecast widget per recieved data 
         forecast_widgets = [
@@ -189,11 +187,8 @@ class RadarScreen(Screen):
         self.frames = []
         self.current_frame_index = 0
         self.animation_timer = None
-        try:
-            with open("settings.json", "r") as f:
-                settings = json.load(f)
-        except FileNotFoundError:
-            settings = {}
+        
+        settings = get_settings()
         
         self.query_one("#loading").display = True
         self.query_one("#map-art").display = False
@@ -205,15 +200,11 @@ class RadarScreen(Screen):
         self.temperature_unit = get_temperature_unit()
         self.time_format = get_time_format()
         
-        self.fetch_all_data(self.current_use_ip, self.current_zip_code)
+        self.fetch_all_data()
 
     def on_screen_resume(self) -> None:
         """Called automatically every time the screen becomes active again."""
-        try:
-            with open("settings.json", "r") as f:
-                settings = json.load(f)
-        except FileNotFoundError:
-            settings = {}
+        settings = get_settings()
             
         new_use_ip = settings.get("use_ip", True)
         new_zip_code = settings.get("zip_code", "")
@@ -224,9 +215,7 @@ class RadarScreen(Screen):
             self.temperature_unit = new_temperature
             if hasattr(self, 'forecast_data') and self.forecast_data:
                 period = self.forecast_data[0]
-                temp = period['temp']
-                if self.temperature_unit == "C":
-                    temp = round((temp - 32) * (5.0 / 9.0), 1)
+                temp = convert_temp(period['temp'], self.temperature_unit)
                 forecast_text = f"[bold]{period['time']}[/bold]\n{temp}°{self.temperature_unit}\n{period['short_forecast']}\nWind: {period['wind']}\nPrecip: {period['precip']}"
                 self.query_one("#latest-forecast").update(forecast_text) 
 
@@ -247,18 +236,13 @@ class RadarScreen(Screen):
             self.query_one("#loading").display = True
             self.query_one("#map-art").display = False
                 
-            self.fetch_all_data(new_use_ip, new_zip_code)
+            self.fetch_all_data()
 
     @work(thread=True, exclusive=True) # exclusive=True prevents duplicate tasks from piling up
-    def fetch_all_data(self, use_ip, zip_code) -> None:
+    def fetch_all_data(self) -> None:
         """Fetches coordinates, then fetches all API data simultaneously."""
         try:
-            if use_ip in [True, "true", "True"]:
-                self.lat, self.lon, self.country = get_coords_auto()
-            elif zip_code and zip_code != "":
-                self.lat, self.lon, self.country = get_coords_manual(zip_code)
-            else:
-                self.lat, self.lon, self.country = None, None, None
+            self.lat, self.lon, self.country = get_app_coordinates()
 
             # 2. Fetch the rest of the data concurrently (at the same time!)
             with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -303,9 +287,7 @@ class RadarScreen(Screen):
         if hasattr(self, 'forecast_data') and self.forecast_data:
             period = self.forecast_data[0]
             unit = get_temperature_unit()
-            temp = period['temp']
-            if unit == "C":
-                temp = round((temp - 32) * (5.0 / 9.0), 1)
+            temp = convert_temp(period['temp'], unit)
             forecast_text = f"[bold]{period['time']}[/bold]\n{temp}°{unit}\n{period['short_forecast']}\nWind: {period['wind']}\nPrecip: {period['precip']}"
             self.query_one("#latest-forecast").update(forecast_text)
         else:
@@ -344,6 +326,15 @@ class RadarScreen(Screen):
             # Move to the next frame, loop back to 0 if at the end
             self.current_frame_index = (self.current_frame_index + 1) % len(self.frames)
 
+def save_settings(settings):
+    """Save settings to settings.json."""
+    with open("settings.json", "w") as f:
+        json.dump(settings, f)
+    # Clear caches
+    get_settings.cache_clear()
+    get_temperature_unit.cache_clear()
+    get_time_format.cache_clear()
+
 class SettingsScreen(Screen):
     """The configuration settings screen."""
 
@@ -356,12 +347,12 @@ class SettingsScreen(Screen):
                     yield RadioButton("Fahrenheit", value=True)
                     yield RadioButton("Celsius")
                 
-                with Horizontal(id="ip-switch-container"):
-                    yield Label("Use IP:")
-                    # FIX 1: Remove the hardcoded value=True so it defaults to off
-                    yield Switch(id="use-ip")  
-                    
-                yield Label("Enter Zip Code")
+                yield Label("Location Method", classes="settings-title")
+                with RadioSet(id="location-method"):
+                    yield RadioButton("Use IP", id="use-ip-radio")
+                    yield RadioButton("Zip Code", id="zip-code-radio")
+                
+                yield Label("Zip Code Entry", id="zip-label")
                 yield Input(placeholder="Zip Code", id="zip-code-input")
                 yield Button("Save Zip Code", id="save-zip-btn")
             
@@ -374,11 +365,7 @@ class SettingsScreen(Screen):
 
     def on_mount(self) -> None:
         # Load settings from file
-        try:
-            with open("settings.json", "r") as f:
-                settings = json.load(f)
-        except FileNotFoundError:
-            settings = {}
+        settings = get_settings()
         
         # Set temperature
         temp_radio = self.query_one("#temp-format", RadioSet)
@@ -396,76 +383,55 @@ class SettingsScreen(Screen):
                 radio.value = True
                 break
         
-        # Set IP switch and zip code input state
-        use_ip = settings.get("use_ip", False) 
-        self.query_one("#zip-code-input", Input).disabled = use_ip
-        self.query_one("#save-zip-btn", Button).disabled = use_ip
-        self.query_one("#use-ip", Switch).value = use_ip
+        # Set location method
+        use_ip = settings.get("use_ip", True)
+        loc_radio = self.query_one("#location-method", RadioSet)
+        if use_ip:
+            self.query_one("#use-ip-radio", RadioButton).value = True
+        else:
+            self.query_one("#zip-code-radio", RadioButton).value = True
+        
+        # Enable/Disable zip code input
+        self.update_zip_input_state(use_ip)
         
         if "zip_code" in settings:
             self.query_one("#zip-code-input", Input).value = settings["zip_code"]
 
+    def update_zip_input_state(self, use_ip: bool) -> None:
+        self.query_one("#zip-code-input", Input).disabled = use_ip
+        self.query_one("#save-zip-btn", Button).disabled = use_ip
+        # Optional: update display to reflect state
+        self.query_one("#zip-label").display = not use_ip
+        self.query_one("#zip-code-input").display = not use_ip
+        self.query_one("#save-zip-btn").display = not use_ip
 
     def on_radio_set_changed(self, event: RadioSet.Changed) -> None:
         # Save settings
-        try:
-            with open("settings.json", "r") as f:
-                settings = json.load(f)
-        except FileNotFoundError:
-            settings = {}
+        settings = get_settings()
         
-        # Get temperature
-        temp_radio = self.query_one("#temp-format", RadioSet)
-        for radio in temp_radio.children:
-            if radio.value:
-                settings["temperature"] = radio.label.plain
-                break
+        if event.radio_set.id == "temp-format":
+            for radio in event.radio_set.children:
+                if radio.value:
+                    settings["temperature"] = radio.label.plain
+                    break
+        elif event.radio_set.id == "time-format":
+            for radio in event.radio_set.children:
+                if radio.value:
+                    settings["time_format"] = radio.label.plain
+                    break
+        elif event.radio_set.id == "location-method":
+            use_ip = self.query_one("#use-ip-radio", RadioButton).value
+            settings["use_ip"] = use_ip
+            self.update_zip_input_state(use_ip)
         
-        # Get time format
-        time_radio = self.query_one("#time-format", RadioSet)
-        for radio in time_radio.children:
-            if radio.value:
-                settings["time_format"] = radio.label.plain
-                break
-        
-        with open("settings.json", "w") as f:
-            json.dump(settings, f)
-        
-        # Clear cache so the UI updates immediately
-        get_temperature_unit.cache_clear()
-        get_time_format.cache_clear()
-
-    def on_switch_changed(self, event: Switch.Changed) -> None:
-        if event.switch.id == "use-ip":
-            # Save use_ip setting
-            try:
-                with open("settings.json", "r") as f:
-                    settings = json.load(f)
-            except FileNotFoundError:
-                settings = {}
-            
-            settings["use_ip"] = event.value
-            
-            with open("settings.json", "w") as f:
-                json.dump(settings, f)
-            
-        self.query_one("#zip-code-input", Input).disabled = event.value
-        self.query_one("#save-zip-btn", Button).disabled = event.value
+        save_settings(settings)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "save-zip-btn":
             zip_code = self.query_one("#zip-code-input", Input).value
-
-            try:
-                with open("settings.json", "r") as f:
-                    settings = json.load(f)
-            except FileNotFoundError:
-                settings = {}
-            
+            settings = get_settings()
             settings["zip_code"] = zip_code
-            
-            with open("settings.json", "w") as f:
-                json.dump(settings, f)
+            save_settings(settings)
             
 class LogScreen(Screen):
 
