@@ -28,33 +28,52 @@ def fetch_json(url, desc):
             else:
                 time.sleep(2 ** count)
     except requests.RequestException as e:
-        print(f"{desc} error! {e}")
-        sys.exit(1)
+        write_log(f"{desc} error! {e}")
+        return None
 
 def get_coords_manual(user_location):
+    # If it's a 5-digit zip code, append ", USA" to avoid international results
+    if user_location.isdigit() and len(user_location) == 5:
+        search_query = f"{user_location}, USA"
+    else:
+        search_query = user_location
+
     url = (
         "https://nominatim.openstreetmap.org/search?"
-        f"q={user_location}&format=json&limit=1"
+        f"q={search_query}&format=json&limit=1"
     )
-    data = fetch_json(url, "Geocode API")[0]
+    data = fetch_json(url, "Geocode API")
+    
+    if not data or len(data) == 0:
+        write_log(f"Geocode API returned no results for {search_query}")
+        return None, None, None
 
-    country = data["display_name"].split(", ")[-1].upper()
+    data = data[0]
+    country = data.get("display_name", "").split(", ")[-1].upper()
 
     return str(data["lat"]), str(data["lon"]), str(country)
 
 @lru_cache(maxsize=1)
 def get_coords_auto():
     data = fetch_json("http://ipinfo.io/json", "IP geolocation")
-    lat, lon = data["loc"].split(",")
-    country = data["country"]
+    if not data:
+        return None, None, None
+    
+    loc = data.get("loc", "")
+    if "," in loc:
+        lat, lon = loc.split(",")
+    else:
+        lat, lon = None, None
+        
+    country = data.get("country", "")
     return lat, lon, country
 
 @lru_cache(maxsize=1)
 def get_point_metadata(lat, lon):
     if lat is None or lon is None:
-        return {"properties": {"forecast": None}}  # Return empty metadata if location is unknown
+        return None 
     url = f"https://api.weather.gov/points/{lat},{lon}"
-    print(f"Fetching point metadata from NWS for {lat}, {lon} with URL: {url}")
+    write_log(f"Fetching point metadata from NWS for {lat}, {lon}")
     return fetch_json(url, "NWS location data")
 
 @lru_cache(maxsize=1)
@@ -62,22 +81,35 @@ def get_alerts(lat, lon):
     if lat is None or lon is None:
         return {"features": []}  # Return empty alerts if location is unknown
     url = f"https://api.weather.gov/alerts/active?point={lat},{lon}"
-    return fetch_json(url, "NWS alerts")
+    data = fetch_json(url, "NWS alerts")
+    return data if data else {"features": []}
 
 @lru_cache(maxsize=1)
 def get_forecast(lat, lon):
     if lat is None or lon is None:
-        return []  # Return empty forecast if location is unknown
-    return fetch_json(get_point_metadata(lat, lon)["properties"]["forecast"], "NWS forecast")
+        return None
+    
+    metadata = get_point_metadata(lat, lon)
+    if not metadata or "properties" not in metadata:
+        return None
+        
+    forecast_url = metadata["properties"].get("forecast")
+    if not forecast_url:
+        return None
+        
+    return fetch_json(forecast_url, "NWS forecast")
 
 
 @lru_cache(maxsize=2)
 def get_numerical_forecast(lat, lon):
     if lat is None or lon is None:
         return []  # Return empty forecast if location is unknown
-    raw_data = get_forecast(lat, lon)
     
-    periods = raw_data.get("properties", {}).get("periods", [])
+    raw_data = get_forecast(lat, lon)
+    if not raw_data or "properties" not in raw_data:
+        return []
+    
+    periods = raw_data["properties"].get("periods", [])
     
     forecast_list = []
     

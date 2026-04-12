@@ -99,26 +99,44 @@ class ForecastScreen(Screen):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.lat, self.lon, self.country = get_coords_auto()
+        self.load_and_fetch()
+
+    def load_and_fetch(self) -> None:
+        try:
+            with open("settings.json", "r") as f:
+                settings = json.load(f)
+        except FileNotFoundError:
+            settings = {}
+        
+        use_ip = settings.get("use_ip", True)
+        zip_code = settings.get("zip_code", "")
+        
+        if use_ip in [True, "true", "True"]:
+            self.lat, self.lon, self.country = get_coords_auto()
+        elif zip_code and zip_code != "":
+            self.lat, self.lon, self.country = get_coords_manual(zip_code)
+        else:
+            self.lat, self.lon, self.country = None, None, None
+
         forecast_data = get_numerical_forecast(self.lat, self.lon)  
         self.temperature_unit = get_temperature_unit()
 
-        #dynamically create forecast widget per recieved data 
+        # Clear existing widgets
+        container = self.query_one("#forecast_container", ScrollableContainer)
+        for widget in container.query(ForecastWidget):
+            widget.remove()
+
+        # dynamically create forecast widget per recieved data 
         forecast_widgets = [
                 ForecastWidget(period, id=f"forecast{i}", classes="forecast_item")
                 for i, period in enumerate(forecast_data)
         ]
 
-        container = self.query_one("#forecast_container", ScrollableContainer)
         container.mount(*forecast_widgets)
     
     def on_screen_resume(self):
-        new_temperature_unit = get_temperature_unit()
-        if new_temperature_unit != self.temperature_unit:
-            self.temperature_unit = new_temperature_unit
-            # Update all forecast widgets with the new temperature unit
-            for widget in self.query(ForecastWidget):
-                widget.refresh()
+        # Re-fetch data if settings changed (simple way for now)
+        self.load_and_fetch()
     
 class RadarScreen(Screen):
     """The forecast and radar map screen."""
@@ -216,24 +234,30 @@ class RadarScreen(Screen):
     @work(thread=True, exclusive=True) # exclusive=True prevents duplicate tasks from piling up
     def fetch_all_data(self, use_ip, zip_code) -> None:
         """Fetches coordinates, then fetches all API data simultaneously."""
-        if use_ip in [True, "true", "True"]:
-            self.lat, self.lon, self.country = get_coords_auto()
-        elif zip_code and zip_code != "":
-            self.lat, self.lon, self.country = get_coords_manual(zip_code)
-        else:
-            self.lat, self.lon, self.country = None, None, None
+        try:
+            if use_ip in [True, "true", "True"]:
+                self.lat, self.lon, self.country = get_coords_auto()
+            elif zip_code and zip_code != "":
+                self.lat, self.lon, self.country = get_coords_manual(zip_code)
+            else:
+                self.lat, self.lon, self.country = None, None, None
 
-        # 2. Fetch the rest of the data concurrently (at the same time!)
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            # Launch all three network requests simultaneously
-            future_frames = executor.submit(get_radar_frames, MICHIGAN_MAP_PLACEHOLDER, num_frames=5, highlight_lat=self.lat, highlight_lon=self.lon)
-            future_alerts = executor.submit(get_alerts, self.lat, self.lon)
-            future_forecast = executor.submit(get_numerical_forecast, self.lat or 43.0125, self.lon or -83.6875)
+            # 2. Fetch the rest of the data concurrently (at the same time!)
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                # Launch all three network requests simultaneously
+                future_frames = executor.submit(get_radar_frames, MICHIGAN_MAP_PLACEHOLDER, num_frames=5, highlight_lat=self.lat, highlight_lon=self.lon)
+                future_alerts = executor.submit(get_alerts, self.lat, self.lon)
+                future_forecast = executor.submit(get_numerical_forecast, self.lat, self.lon)
 
-            # Wait for them all to finish and grab their results
-            self.frames = future_frames.result()
-            self.alerts = future_alerts.result()
-            self.forecast_data = future_forecast.result()
+                # Wait for them all to finish and grab their results
+                self.frames = future_frames.result()
+                self.alerts = future_alerts.result()
+                self.forecast_data = future_forecast.result()
+        except Exception as e:
+            write_log(f"Error fetching data: {e}")
+            self.frames = []
+            self.alerts = {"features": []}
+            self.forecast_data = []
             
         # 3. Once all data is fetched, start the animation loop on the main UI thread
         self.app.call_from_thread(self.start_animation)
