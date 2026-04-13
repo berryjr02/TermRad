@@ -1,9 +1,10 @@
-# TermRad 📡⛈️
+# TermRad
 
-**Professional Terminal Weather Dashboard**  
+**Terminal Weather Dashboard**  
 _Real-time doppler radar, automated forecasts, and persistent customization in your terminal._
+*currently limited to Michigan.*
 
-![image](https://github.com/user-attachments/assets/467256d2-9be7-4123-9f9f-2369ac57a2ed)
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/b95bdcdd-6f58-43eb-ba59-64fa3fa44567" />
 
 ## Key Features
 
