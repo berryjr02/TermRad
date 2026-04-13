@@ -69,7 +69,7 @@ Footer > .footer--highlight {
 }
 #radar-container {
     height: 100%;
-    padding: 2;
+    padding: 1 2;
 }
 
 #alert-panel {
@@ -113,6 +113,7 @@ Footer > .footer--highlight {
 #map-panel {
     width: 105;
     align: center middle;
+    overflow-y: auto;
 }
 
 #map-art {
@@ -124,7 +125,7 @@ Footer > .footer--highlight {
     width: 100%;
     text-align: center;
     margin-top: 1;
-    margin-bottom: 1;
+    margin-bottom: 0;
 }
 
 /* --- Legend Styles --- */
