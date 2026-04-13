@@ -1,9 +1,10 @@
-import time
-import requests
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
+
+import requests
 from PIL import Image
 from rich.text import Text
-from datetime import datetime, timedelta, timezone
+
 try:
     from .weather_api import write_log
 except (ImportError, ValueError):
@@ -12,6 +13,7 @@ from functools import lru_cache
 
 # Shifted 0.3 degrees east to pull the marker left onto Michigan
 MICHIGAN_BBOX = "-87.6643,41.69,-81.2357,45.80"
+
 
 @lru_cache(maxsize=10)
 def process_radar_image(img_bytes, padded_lines_tuple, highlight_coord=None):
@@ -28,7 +30,7 @@ def process_radar_image(img_bytes, padded_lines_tuple, highlight_coord=None):
             char = padded_lines_tuple[y][x]
             r, g, b, a = img.getpixel((x, y))
             style = ""
-            
+
             # If there's radar data, set the background color
             if a >= 50:
                 style = f"on #{r:02x}{g:02x}{b:02x}"
@@ -37,26 +39,29 @@ def process_radar_image(img_bytes, padded_lines_tuple, highlight_coord=None):
             # Check for the center point or the 4 adjacent points to form a plus
             is_plus = (x == hx and abs(y - hy) <= 1) or (y == hy and abs(x - hx) <= 1)
             if is_plus:
-                char = "+" 
-                style = "bold #FFFFFF on #000000" # High contrast white on black
+                char = "+"
+                style = "bold #FFFFFF on #000000"  # High contrast white on black
                 if x == hx and y == hy:
-                    char = "X" # Center of the plus
+                    char = "X"  # Center of the plus
 
             # Append the character with the determined style
             if style:
                 text.append(char, style=style)
             else:
                 text.append(char)
-                
+
         if y < height - 1:
             text.append("\n")
-            
+
     return text
+
 
 def latlon_to_pixel(lat, lon, bbox_str, width, height):
     """Converts a latitude and longitude to a pixel coordinate."""
     try:
-        west_lon, south_lat, east_lon, north_lat = [float(c) for c in bbox_str.split(',')]
+        west_lon, south_lat, east_lon, north_lat = [
+            float(c) for c in bbox_str.split(",")
+        ]
         lat, lon = float(lat), float(lon)
 
         # Check if the coordinate is within the bounding box
@@ -79,31 +84,37 @@ def latlon_to_pixel(lat, lon, bbox_str, width, height):
     except (ValueError, IndexError):
         return None
 
-def get_radar_frames(ascii_map_string, num_frames=5, highlight_lat=None, highlight_lon=None):
+
+@lru_cache(maxsize=2)
+def get_radar_frames(
+    ascii_map_string, num_frames=5, highlight_lat=None, highlight_lon=None
+):
     """Fetches radar frames and returns a list of Rich Text objects."""
-    
+
     # 1. Determine dimensions of your ascii map
     raw_lines = ascii_map_string.split("\n")
-    
+
     # Programmatically pad every line with 15 spaces on both sides
     # This ensures perfect centering and a 100-character wide view
     lines = [" " * 15 + line + " " * 15 for line in raw_lines]
-    
+
     height = len(lines)
     width = max(len(line) for line in lines)
 
     # Pad lines so they are all exactly the same width for the grid
     padded_lines = [line.ljust(width) for line in lines]
     frames = []
-    
+
     # 2. Fetch images from IEM WMS
     base_url = "https://mesonet.agron.iastate.edu/cgi-bin/wms/nexrad/n0q-t.cgi"
-    
+
     # Calculate the pixel to highlight for location, if provided
     highlight_coord = None
     if highlight_lat is not None and highlight_lon is not None:
-        highlight_coord = latlon_to_pixel(highlight_lat, highlight_lon, MICHIGAN_BBOX, width, height)
-    
+        highlight_coord = latlon_to_pixel(
+            highlight_lat, highlight_lon, MICHIGAN_BBOX, width, height
+        )
+
     now = datetime.now(timezone.utc)
     now = now.replace(minute=(now.minute // 15) * 15, second=0, microsecond=0)
 
@@ -113,16 +124,16 @@ def get_radar_frames(ascii_map_string, num_frames=5, highlight_lat=None, highlig
 
         params = {
             "SERVICE": "WMS",
-            "VERSION": "1.1.1",     
+            "VERSION": "1.1.1",
             "REQUEST": "GetMap",
             "FORMAT": "image/png",
             "TRANSPARENT": "true",
             "LAYERS": "nexrad-n0q-wmst",
-            "SRS": "EPSG:4326",      
+            "SRS": "EPSG:4326",
             "BBOX": MICHIGAN_BBOX,
             "WIDTH": str(width),
             "HEIGHT": str(height),
-            "TIME": time_str
+            "TIME": time_str,
         }
 
         try:
@@ -132,15 +143,17 @@ def get_radar_frames(ascii_map_string, num_frames=5, highlight_lat=None, highlig
                     # Store raw bytes for caching
                     frames.append(response.content)
         except Exception as e:
-            write_log(f"Radar fetch error: {e}") # Log if network drops or API fails
+            write_log(f"Radar fetch error: {e}")  # Log if network drops or API fails
 
     # 3. Process pixels and build Rich Text frames
     rich_frames = []
-    padded_lines_tuple = tuple(padded_lines) # Tuples are hashable for lru_cache
+    padded_lines_tuple = tuple(padded_lines)  # Tuples are hashable for lru_cache
     for img_bytes in frames:
-        rich_frames.append(process_radar_image(img_bytes, padded_lines_tuple, highlight_coord)) 
-    
+        rich_frames.append(
+            process_radar_image(img_bytes, padded_lines_tuple, highlight_coord)
+        )
+
     if not rich_frames:
         return [Text(ascii_map_string)]
-        
+
     return rich_frames

@@ -1,6 +1,5 @@
 import unittest
 from unittest.mock import patch, MagicMock
-import json
 import os
 import sys
 
@@ -12,8 +11,8 @@ from TermRad import weather_api
 from TermRad import radar_animator
 from TermRad import app as TermRad
 
-class TestTermRadIntegrated(unittest.TestCase):
 
+class TestTermRadIntegrated(unittest.TestCase):
     # --- SETUP ---
     def setUp(self):
         # Clear lru_caches before each test to ensure fresh results
@@ -26,20 +25,22 @@ class TestTermRadIntegrated(unittest.TestCase):
         TermRad.get_settings.cache_clear()
 
     # --- API TESTS (weather_api.py) ---
-    @patch('TermRad.weather_api.fetch_json')
+    @patch("TermRad.weather_api.fetch_json")
     def test_api_get_coords_manual_zip(self, mock_fetch):
-        mock_fetch.return_value = [{
-            "lat": "43.0246800",
-            "lon": "-83.5267848",
-            "display_name": "Davison, Michigan, 48423, USA"
-        }]
+        mock_fetch.return_value = [
+            {
+                "lat": "43.0246800",
+                "lon": "-83.5267848",
+                "display_name": "Davison, Michigan, 48423, USA",
+            }
+        ]
         lat, lon, country = weather_api.get_coords_manual("48423")
         self.assertEqual(lat, "43.0246800")
         self.assertEqual(country, "USA")
         # Ensure it appends USA for zip codes
         self.assertIn("q=48423, USA", mock_fetch.call_args[0][0])
 
-    @patch('TermRad.weather_api.fetch_json')
+    @patch("TermRad.weather_api.fetch_json")
     def test_api_nws_error_handling(self, mock_fetch):
         mock_fetch.return_value = None
         forecast = weather_api.get_numerical_forecast("0", "0")
@@ -49,14 +50,18 @@ class TestTermRadIntegrated(unittest.TestCase):
     def test_radar_latlon_to_pixel_mapping(self):
         width, height = 100, 100
         # MICHIGAN_BBOX = "-87.6643,41.69,-81.2357,45.80" (current calibrated)
-        
+
         # Test SW Corner (41.69, -87.6643) -> Should be (0, 99)
-        x, y = radar_animator.latlon_to_pixel(41.69, -87.6643, radar_animator.MICHIGAN_BBOX, width, height)
+        x, y = radar_animator.latlon_to_pixel(
+            41.69, -87.6643, radar_animator.MICHIGAN_BBOX, width, height
+        )
         self.assertEqual(x, 0)
         self.assertEqual(y, 99)
 
         # Test Out of Bounds
-        result = radar_animator.latlon_to_pixel(34.05, -118.24, radar_animator.MICHIGAN_BBOX, width, height)
+        result = radar_animator.latlon_to_pixel(
+            34.05, -118.24, radar_animator.MICHIGAN_BBOX, width, height
+        )
         self.assertIsNone(result)
 
     # --- APP LOGIC TESTS (TermRad.py helpers) ---
@@ -70,12 +75,12 @@ class TestTermRadIntegrated(unittest.TestCase):
         # Hot (Red)
         self.assertEqual(TermRad.get_temp_color(95), "#FF5555")
 
-    @patch('TermRad.app.get_settings')
+    @patch("TermRad.app.get_settings")
     def test_logic_get_time_format(self, mock_settings):
         # 12-hour (Default)
         mock_settings.return_value = {"time_format": "12 hour"}
         self.assertIn("%I:%M %p", TermRad.get_time_format())
-        
+
         # 24-hour
         TermRad.get_settings.cache_clear()
         mock_settings.return_value = {"time_format": "24 hour"}
@@ -89,18 +94,18 @@ class TestTermRadIntegrated(unittest.TestCase):
         # 75F -> 75F
         self.assertEqual(TermRad.convert_temp(75, "F"), 75)
 
-    @patch('TermRad.app.get_settings')
+    @patch("TermRad.app.get_settings")
     def test_logic_get_temperature_unit(self, mock_settings):
         mock_settings.return_value = {"temperature": "Celsius"}
         self.assertEqual(TermRad.get_temperature_unit(), "C")
-        
+
         TermRad.get_settings.cache_clear()
         mock_settings.return_value = {"temperature": "Fahrenheit"}
         self.assertEqual(TermRad.get_temperature_unit(), "F")
 
-    @patch('TermRad.app.get_settings')
-    @patch('TermRad.app.get_coords_auto')
-    @patch('TermRad.app.get_coords_manual')
+    @patch("TermRad.app.get_settings")
+    @patch("TermRad.app.get_coords_auto")
+    @patch("TermRad.app.get_coords_manual")
     def test_logic_get_app_coordinates(self, mock_manual, mock_auto, mock_settings):
         # Test Use IP
         mock_settings.return_value = {"use_ip": True}
@@ -116,20 +121,21 @@ class TestTermRadIntegrated(unittest.TestCase):
         mock_manual.assert_called_with("48423")
 
     # --- SETTINGS IO TESTS ---
-    @patch('builtins.open', new_callable=MagicMock)
-    @patch('json.dump')
-    @patch('TermRad.app.get_settings')
+    @patch("builtins.open", new_callable=MagicMock)
+    @patch("json.dump")
+    @patch("TermRad.app.get_settings")
     def test_settings_save_and_load(self, mock_get, mock_json_dump, mock_open):
         test_settings = {"test": "value", "use_ip": True}
-        
+
         # Test saving (mocking open and json.dump)
         TermRad.save_settings(test_settings)
         mock_json_dump.assert_called_once()
-        
+
         # Test loading logic via helper
         mock_get.return_value = test_settings
         loaded = TermRad.get_settings()
         self.assertEqual(loaded["test"], "value")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()
