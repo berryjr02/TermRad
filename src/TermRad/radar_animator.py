@@ -4,11 +4,14 @@ from io import BytesIO
 from PIL import Image
 from rich.text import Text
 from datetime import datetime, timedelta, timezone
-from weather_api import write_log
+try:
+    from .weather_api import write_log
+except (ImportError, ValueError):
+    from weather_api import write_log
 from functools import lru_cache
 
-# Michigan's rough bounding box (West, South, East, North) - specifically for the Lower Peninsula!
-MICHIGAN_BBOX = "-87.00,41.69,-82.50,45.80"
+# Shifted 0.3 degrees east to pull the marker left onto Michigan
+MICHIGAN_BBOX = "-87.6643,41.69,-81.2357,45.80"
 
 @lru_cache(maxsize=10)
 def process_radar_image(img_bytes, padded_lines_tuple, highlight_coord=None):
@@ -16,6 +19,9 @@ def process_radar_image(img_bytes, padded_lines_tuple, highlight_coord=None):
     img = Image.open(BytesIO(img_bytes)).convert("RGBA")
     width, height = img.size
     text = Text()
+
+    # Pre-calculate the highlight area for faster checking in the loop
+    hx, hy = highlight_coord if highlight_coord else (-10, -10)
 
     for y in range(height):
         for x in range(width):
@@ -27,12 +33,14 @@ def process_radar_image(img_bytes, padded_lines_tuple, highlight_coord=None):
             if a >= 50:
                 style = f"on #{r:02x}{g:02x}{b:02x}"
 
-            # Apply the location highlight OVER the map
-            if highlight_coord:
-                hx, hy = highlight_coord
-                if x == hx and y == hy or (hx - 1 <= x <= hx + 1 and hy - 1 <= y <= hy + 1):
-                    char = "X"
-                    style = "bold black on #FFFFFF"
+            # Apply the location highlight OVER the map (Plus shape)
+            # Check for the center point or the 4 adjacent points to form a plus
+            is_plus = (x == hx and abs(y - hy) <= 1) or (y == hy and abs(x - hx) <= 1)
+            if is_plus:
+                char = "+" 
+                style = "bold #FFFFFF on #000000" # High contrast white on black
+                if x == hx and y == hy:
+                    char = "X" # Center of the plus
 
             # Append the character with the determined style
             if style:
@@ -75,12 +83,11 @@ def get_radar_frames(ascii_map_string, num_frames=5, highlight_lat=None, highlig
     """Fetches radar frames and returns a list of Rich Text objects."""
     
     # 1. Determine dimensions of your ascii map
-    lines = ascii_map_string.strip("\n").split("\n")
+    raw_lines = ascii_map_string.split("\n")
     
-    # Format Map
-    lines = [line.rstrip() for line in lines]
-    min_indent = min(len(line) - len(line.lstrip()) for line in lines if line.strip())
-    lines = [line[min_indent:] for line in lines]
+    # Programmatically pad every line with 15 spaces on both sides
+    # This ensures perfect centering and a 100-character wide view
+    lines = [" " * 15 + line + " " * 15 for line in raw_lines]
     
     height = len(lines)
     width = max(len(line) for line in lines)

@@ -6,9 +6,35 @@ Screen {
     color: $text;
 }
 
-Header, Footer {
+Header {
     background: $primary;
+    color: black;
+    text-style: bold;
+}
+
+Header > HeaderClock {
+    color: black;
+}
+
+Footer {
+    background: $surface;
     color: $text;
+}
+
+Footer > .footer--key {
+    background: $primary;
+    color: black;
+    text-style: bold;
+    margin-right: 1;
+}
+
+Footer > .footer--description {
+    color: $text;
+    margin-right: 2;
+}
+
+Footer > .footer--highlight {
+    background: $accent;
 }
 
 /* --- Home Screen --- */
@@ -47,24 +73,45 @@ Header, Footer {
 }
 
 #alert-panel {
-    width: 30%;
+    width: 1fr;
     height: 100%;
-    padding-right: 4;
 }
 
-#alert-title {
+#alerts-section {
+    border: solid $error;
+    padding: 1 2;
+    margin: 0 4 1 4;
+    height: auto;
+}
+
+#alert-header {
     color: $error;
     text-style: bold;
+    text-align: center;
+    width: 100%;
+}
+
+#forecast-section {
+    border: solid $primary;
+    padding: 1 2;
+    margin: 0 4;
+    height: auto;
+}
+
+#forecast-header {
+    color: $primary;
+    text-style: bold;
+    text-align: center;
+    width: 100%;
     margin-bottom: 1;
 }
 
-#alert-description {
+#latest-forecast {
     width: 100%;
-    color: $foreground;
 }
 
 #map-panel {
-    width: 53%;
+    width: 105;
     align: center middle;
 }
 
@@ -82,7 +129,7 @@ Header, Footer {
 
 /* --- Legend Styles --- */
 #legend-container {
-    width: 12%;
+    width: 1fr;
     align: center middle;
     margin-top: 1;
 }
@@ -94,21 +141,20 @@ Header, Footer {
 }
 
 .legend-swatch {
-    padding: 1 2;     /* Vertical and horizontal padding for visibility */
+    padding: 0 1;     /* Minimal vertical padding for a sleeker look */
     margin: 0 1;
     text-style: bold;
     text-align: center;
     border: solid $foreground;
-    width: 100%
+    width: 16;        /* Narrower width for a more refined appearance */
 }
 
-/* Base Reflectivity Colors */
+/* Base Reflectivity Colors (Meteorological Standards) */
 .swatch-snow  { background: #00FFFF; color: black; } /* Cyan */
-.swatch-light { background: $success; color: black; } /* Green */
-.swatch-mod   { background: $warning; color: black; } /* Yellow */
-.swatch-heavy { background: $error; color: $foreground; } /* Red */
-.swatch-hail  { background: #FF00FF; color: $foreground; } /* Magenta */
-.swatch-location { background: $foreground; color: black; } /* White */
+.swatch-light { background: #00FF00; color: black; } /* Green */
+.swatch-mod   { background: #FFFF00; color: black; } /* Yellow */
+.swatch-heavy { background: #FF0000; color: white; } /* Red */
+.swatch-hail  { background: #FF00FF; color: white; } /* Magenta */
 
 /* --- Settings Screen --- */
 #settings-container {
@@ -146,22 +192,59 @@ RadioButton:focus {
     text-style: bold;
 }
 
+#zip-code-group {
+    border: double $accent;
+    padding: 1 2;
+    margin-top: 1;
+    background: $surface;
+    height: auto;
+}
+
+#zip-label {
+    text-style: bold;
+    width: 100%;
+    text-align: center;
+    margin-bottom: 1;
+}
+
+#zip-code-input {
+    width: 100%;
+    margin-bottom: 1;
+}
+
+#save-zip-btn {
+    width: 100%;
+}
+
+#forecast-screen-content {
+    height: 100%;
+}
+
+#forecast-loading-container {
+    height: 100%;
+    width: 100%;
+    align: center middle;
+}
+
 #forecast_container {
     border: solid $primary;
     width: 100%;
-    height: auto;
+    height: 1fr; /* Fill remaining space and enable internal scrolling */
     layout: grid;
-    grid-size: 2; /* 4 columns for desktop-like widths */
+    grid-size: 2; /* 2 columns */
+    grid-rows: auto; /* Allow rows to size based on content */
     grid-gutter: 1 1;
     padding: 1 2;
+    display: none; /* Hidden while loading */
 }
 
 .forecast_item {
     width: 1fr;
     height: auto;
+    min-height: 7; /* Ensure enough height for all 5 lines of forecast info */
     border: solid $accent;
     padding: 1 2;
-    background: $panel;
-    color: $text;
+    background: $surface;
+    color: $foreground;
     text-align: center;
 }

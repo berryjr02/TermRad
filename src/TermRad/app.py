@@ -1,14 +1,22 @@
+#!/usr/bin/env python3
 from textual.app import App, ComposeResult, Binding
 from textual.screen import Screen
 from textual.widgets import Header, Footer, Button, Label, Static, Switch, RadioSet, RadioButton, LoadingIndicator, Log, Input
 from textual.containers import Horizontal, Vertical, Center, ScrollableContainer
 from textual.theme import Theme
 from textual import work
+from rich.text import Text
 import json
-from radar_animator import get_radar_frames
-from weather_api import get_alerts, get_coords_auto, write_log, get_numerical_forecast, get_coords_manual
+import os
+try:
+    from .radar_animator import get_radar_frames
+    from .weather_api import get_alerts, get_coords_auto, write_log, get_numerical_forecast, get_coords_manual
+except (ImportError, ValueError):
+    from radar_animator import get_radar_frames
+    from weather_api import get_alerts, get_coords_auto, write_log, get_numerical_forecast, get_coords_manual
 from datetime import datetime, timedelta
 import concurrent.futures
+import argparse
 
 from functools import lru_cache
 
@@ -22,18 +30,31 @@ termrad_theme = Theme(
     error="#FF5555",
     success="#00FF00",
     warning="#FFFF00",
-    text="#FFFFFF",
-    foreground="#FFFFFF",
 )
 
-with open('logo.txt', 'r') as file_handle:
-    ASCII_ART = file_handle.read()
+# Get the directory of the current script to find assets relative to it
+ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
+
+def load_asset(filename):
+    """Utility to load a text asset from the assets folder."""
+    try:
+        with open(os.path.join(ASSETS_DIR, filename), 'r') as f:
+            return f.read()
+    except FileNotFoundError:
+        return ""
+
+ASCII_ART = load_asset('logo.txt')
 
 @lru_cache(maxsize=1)
 def get_settings():
-    """Load settings from settings.json."""
+    """Load settings from the centralized settings file."""
     try:
-        with open("settings.json", "r") as f:
+        from .weather_api import SETTINGS_FILE
+    except (ImportError, ValueError):
+        from weather_api import SETTINGS_FILE
+        
+    try:
+        with open(SETTINGS_FILE, "r") as f:
             return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
@@ -48,7 +69,7 @@ def get_time_format():
     """Get the time format preference."""
     settings = get_settings()
     time_pref = settings.get("time_format", "12 hour")
-    return "24" if time_pref == "24 hour" else "12"
+    return "%H:%M:%S" if time_pref == "24 hour" else "%I:%M %p"
 
 def get_app_coordinates():
     """Get coordinates based on current app settings."""
@@ -68,16 +89,32 @@ def convert_temp(temp_f, unit):
         return round((temp_f - 32) * (5.0 / 9.0), 1)
     return temp_f
 
+def get_temp_color(temp_f: int) -> str:
+    """Assign colors based on temperature heat levels."""
+    if temp_f < 45:
+        return "#5555FF"  # Cold (Blue)
+    elif temp_f < 65:
+        return "#FFFF55"  # Mild (Yellow)
+    elif temp_f < 85:
+        return "#FFAA00"  # Warm (Orange)
+    return "#FF5555"      # Hot (Red)
 
 
-with open('mich.txt', 'r') as file_handle:
-    MICHIGAN_MAP_PLACEHOLDER = file_handle.read()
+MICHIGAN_MAP_PLACEHOLDER = load_asset('mich.txt')
 
 class HomeScreen(Screen):
     """The main menu screen."""
 
+    BINDINGS = [
+        Binding("1", "go_radar", "Radar", show=False),
+        Binding("2", "go_forecast", "Forecast", show=False),
+        Binding("3", "go_settings", "Settings", show=False),
+    ]
+
     def compose(self) -> ComposeResult:
-        yield Header(show_clock=True)
+        header = Header(show_clock=True)
+        header.time_format = get_time_format()
+        yield header
         with Vertical(id="home-container"):
             with Center(): # <--- This container mathematically forces the block to center
                 yield Static(ASCII_ART, id="title-art")
@@ -85,8 +122,9 @@ class HomeScreen(Screen):
                 yield Button("1. Michigan Radar", id="btn-radar", variant="default", classes="menu-button")
             with Center():
                 yield Button("2. Michigan Forecast", id="btn-forecast", variant="default", classes="menu-button")
-            with Center():
-                yield Button("3. Config Settings", id="btn-settings", variant="default", classes="menu-button")
+            if not self.app.public_mode:
+                with Center():
+                    yield Button("3. Config Settings", id="btn-settings", variant="default", classes="menu-button")
         yield Footer()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -107,72 +145,146 @@ class HomeScreen(Screen):
     def action_go_forecast(self) -> None:
         self.app.switch_screen("forecast")
         
+    def on_screen_resume(self) -> None:
+        """Update header format when returning to home screen."""
+        self.query_one(Header).time_format = get_time_format()
+        
 
 class ForecastWidget(Static):
     def __init__(self, period: dict, **kwargs):
         super().__init__(**kwargs)
         self.period = period
 
-    def render(self) -> str:
+    def render(self) -> Text:
         p = self.period
         unit = get_temperature_unit()
-        temp = convert_temp(p['temp'], unit)
-        return f"[bold]{p['time']}[/bold]\n{temp}°{unit}\n{p['short_forecast']}\nWind: {p['wind']}\nPrecip: {p['precip']}"
+        temp_val = convert_temp(p['temp'], unit)
+        
+        # Color based on Fahrenheit original value for consistency
+        temp_color = get_temp_color(p['temp'])
+        
+        return Text.assemble(
+            (f"{p['time']}\n", "bold underline"),
+            (f"{temp_val}°{unit}\n", f"bold {temp_color}"),
+            (f"{p['short_forecast']}\n", "italic"),
+            ("Wind: ", "dim"), (f"{p['wind']}\n", ""),
+            ("Precip: ", "dim"), (f"{p['precip']}", "")
+        )
     
 class ForecastScreen(Screen):
     def compose(self) -> ComposeResult:
-        yield Header(show_clock=True)
-        yield ScrollableContainer(id="forecast_container")
+        header = Header(show_clock=True)
+        header.time_format = get_time_format()
+        yield header
+        with Vertical(id="forecast-screen-content"):
+            with Center(id="forecast-loading-container"):
+                yield LoadingIndicator(id="forecast-loading")
+            yield ScrollableContainer(id="forecast_container")
         yield Footer()
 
     def on_mount(self) -> None:
-        self.load_and_fetch()
-
-    def load_and_fetch(self) -> None:
-        self.lat, self.lon, self.country = get_app_coordinates()
-        forecast_data = get_numerical_forecast(self.lat, self.lon)  
+        settings = get_settings()
+        self.current_use_ip = settings.get("use_ip", True)
+        self.current_zip_code = settings.get("zip_code", "")
         self.temperature_unit = get_temperature_unit()
+        self.fetch_forecast_data()
 
-        # Clear existing widgets
+    @work(thread=True, exclusive=True)
+    def fetch_forecast_data(self) -> None:
+        """Fetch forecast data in a background thread."""
+        self.app.call_from_thread(self.set_loading, True)
+        
+        self.lat, self.lon, self.country = get_app_coordinates()
+        write_log(f"Fetching forecast for {self.lat}, {self.lon} ({self.country})")
+        
+        forecast_data = get_numerical_forecast(self.lat, self.lon)
+        
+        if forecast_data:
+            write_log(f"Successfully fetched {len(forecast_data)} forecast periods.")
+        else:
+            write_log("Forecast data fetch returned empty result.")
+            
+        self.app.call_from_thread(self.update_forecast_ui, forecast_data)
+
+    def set_loading(self, loading: bool) -> None:
+        self.query_one("#forecast-loading-container").display = loading
+
+    def update_forecast_ui(self, forecast_data: list) -> None:
+        """Update the UI with new forecast data."""
+        self.set_loading(False)
         container = self.query_one("#forecast_container", ScrollableContainer)
+        container.display = True
+        
+        # Clear existing widgets
         container.query(ForecastWidget).remove()
+        container.query(Label).remove()
 
-        # dynamically create forecast widget per recieved data 
+        # Create new widgets
         forecast_widgets = [
-                ForecastWidget(period, id=f"forecast{i}", classes="forecast_item")
-                for i, period in enumerate(forecast_data)
+            ForecastWidget(period, classes="forecast_item")
+            for period in forecast_data
         ]
 
-        container.mount(*forecast_widgets)
+        if forecast_widgets:
+            container.mount(*forecast_widgets)
+        else:
+            container.mount(Label("Forecast data unavailable.", id="no-forecast-label"))
     
-    def on_screen_resume(self):
-        # Re-fetch data if settings changed (simple way for now)
-        self.load_and_fetch()
+    def on_screen_resume(self) -> None:
+        """Check for settings changes and refresh if necessary."""
+        settings = get_settings()
+        new_use_ip = settings.get("use_ip", True)
+        new_zip_code = settings.get("zip_code", "")
+        new_temp_unit = get_temperature_unit()
+        
+        # Update header format
+        self.query_one(Header).time_format = get_time_format()
+        
+        # If location changed, re-fetch everything
+        if (new_use_ip != self.current_use_ip or 
+            new_zip_code != self.current_zip_code):
+            self.current_use_ip = new_use_ip
+            self.current_zip_code = new_zip_code
+            self.fetch_forecast_data()
+        # If only temperature unit changed, just refresh existing widgets
+        elif new_temp_unit != self.temperature_unit:
+            self.temperature_unit = new_temp_unit
+            for widget in self.query(ForecastWidget):
+                widget.refresh()
     
 class RadarScreen(Screen):
     """The forecast and radar map screen."""
-    
+
+    BINDINGS = [
+        Binding("space", "toggle_pause", "Pause/Resume", show=False),
+    ]
+
     def compose(self) -> ComposeResult:
-        yield Header(show_clock=True)
+        header = Header(show_clock=True)
+        header.time_format = get_time_format()
+        yield header
         with Horizontal(id="radar-container"):
 
-            # ALERTS Panel
+            # ALERTS & FORECAST Panel
             with Vertical(id="alert-panel"):
-                yield Label("Checking for weather alerts...", id="alert-title")
-                yield Label(
-                    id="alert-description"
-                )
-                yield Label("Latest Forecast:\n", id="forecast-title")
-                yield Static("", id="latest-forecast")
+                # Alert Section (Hidden if no alerts)
+                with Vertical(id="alerts-section"):
+                    yield Label("Weather Alerts", id="alert-header")
+                    yield Static("", id="alert-content")
+
+                # Today's Forecast Section (Always visible)
+                with Vertical(id="forecast-section"):
+                    yield Label("Today's Forecast", id="forecast-header")
+                    yield Static("", id="latest-forecast")
 
             # MAP w/ LEGEND Panel
             with Vertical(id="map-panel"):
                 yield LoadingIndicator(id="loading")
                 yield Static(MICHIGAN_MAP_PLACEHOLDER, id="map-art")
-                
+
                 # The Frame Counter (What your timer is updating)
-                yield Label("FRAME  [ ]", id="legend-label") 
-                
+                yield Label("[ ]", id="legend-label") 
+
             # The New Color Legend
             with Vertical(id="legend-container"):
                 yield Label("Snow/Ice", classes="legend-swatch swatch-snow")
@@ -180,13 +292,13 @@ class RadarScreen(Screen):
                 yield Label("Mod Rain", classes="legend-swatch swatch-mod")
                 yield Label("Heavy Rain", classes="legend-swatch swatch-heavy")
                 yield Label("Hail/Extreme", classes="legend-swatch swatch-hail") 
-                yield Label("Your Location", classes="legend-swatch swatch-location")                    
         yield Footer()        
 
     def on_mount(self) -> None:
         self.frames = []
         self.current_frame_index = 0
         self.animation_timer = None
+        self.is_paused = False
         
         settings = get_settings()
         
@@ -214,13 +326,20 @@ class RadarScreen(Screen):
         if new_temperature != self.temperature_unit:
             self.temperature_unit = new_temperature
             if hasattr(self, 'forecast_data') and self.forecast_data:
-                period = self.forecast_data[0]
-                temp = convert_temp(period['temp'], self.temperature_unit)
-                forecast_text = f"[bold]{period['time']}[/bold]\n{temp}°{self.temperature_unit}\n{period['short_forecast']}\nWind: {period['wind']}\nPrecip: {period['precip']}"
+                p = self.forecast_data[0]
+                temp = convert_temp(p['temp'], self.temperature_unit)
+                forecast_text = Text.assemble(
+                    (f"{p['time']}\n", "bold underline"),
+                    (f"{temp}°{self.temperature_unit}\n", "bold yellow"),
+                    (f"{p['short_forecast']}\n\n", "italic"),
+                    ("Wind:  ", "dim"), (f"{p['wind']}\n", ""),
+                    ("Precip: ", "dim"), (f"{p['precip']}\n", "")
+                )
                 self.query_one("#latest-forecast").update(forecast_text) 
 
         if new_time_format != self.time_format:
             self.time_format = new_time_format
+            self.query_one(Header).time_format = new_time_format
 
         ip_changed = new_use_ip != self.current_use_ip
         zip_changed = new_zip_code != self.current_zip_code
@@ -243,6 +362,7 @@ class RadarScreen(Screen):
         """Fetches coordinates, then fetches all API data simultaneously."""
         try:
             self.lat, self.lon, self.country = get_app_coordinates()
+            write_log(f"Fetching radar and alerts for {self.lat}, {self.lon} ({self.country})")
 
             # 2. Fetch the rest of the data concurrently (at the same time!)
             with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -255,6 +375,7 @@ class RadarScreen(Screen):
                 self.frames = future_frames.result()
                 self.alerts = future_alerts.result()
                 self.forecast_data = future_forecast.result()
+                write_log(f"Successfully fetched {len(self.frames)} radar frames and {len(self.alerts.get('features', []))} alerts.")
         except Exception as e:
             write_log(f"Error fetching data: {e}")
             self.frames = []
@@ -270,40 +391,62 @@ class RadarScreen(Screen):
         self.query_one("#map-art").display = True  
         
         # Update alerts
+        alert_section = self.query_one("#alerts-section")
         if hasattr(self, 'alerts') and self.alerts.get("features"):
             features = self.alerts["features"]
             if features:
+                alert_section.display = True
                 alert = features[0]["properties"]
-                self.query_one("#alert-title").update(alert.get("headline", "Weather Alert"))
-                self.query_one("#alert-description").update(alert.get("description", "No description available."))
+                alert_text = Text.assemble(
+                    (f"{alert.get('headline', 'Weather Alert')}\n", "bold red"),
+                    (f"{alert.get('description', 'No description available.')}", "")
+                )
+                self.query_one("#alert-content").update(alert_text)
             else:
-                self.query_one("#alert-title").update("No Active Alerts")
-                self.query_one("#alert-description").update("")
+                alert_section.display = False
         else:
-            self.query_one("#alert-title").update("No Active Alerts")
-            self.query_one("#alert-description").update("")
+            alert_section.display = False
         
         # Update forecast
         if hasattr(self, 'forecast_data') and self.forecast_data:
-            period = self.forecast_data[0]
+            p = self.forecast_data[0]
             unit = get_temperature_unit()
-            temp = convert_temp(period['temp'], unit)
-            forecast_text = f"[bold]{period['time']}[/bold]\n{temp}°{unit}\n{period['short_forecast']}\nWind: {period['wind']}\nPrecip: {period['precip']}"
+            temp_val = convert_temp(p['temp'], unit)
+            temp_color = get_temp_color(p['temp'])
+            
+            forecast_text = Text.assemble(
+                (f"{p['time']}\n", "bold underline"),
+                (f"{temp_val}°{unit}\n", f"bold {temp_color}"),
+                (f"{p['short_forecast']}\n\n", "italic"),
+                ("Wind:  ", "dim"), (f"{p['wind']}\n", ""),
+                ("Precip: ", "dim"), (f"{p['precip']}\n", "")
+            )
             self.query_one("#latest-forecast").update(forecast_text)
         else:
             self.query_one("#latest-forecast").update("Forecast unavailable")
         
         if not self.frames:
             self.query_one("#map-art", Static).update("Failed to load radar.")
+            self.query_one("#loading").display = False
+            self.query_one("#map-art").display = True
             return
             
+        # Update first frame immediately before showing
+        self.query_one("#map-art", Static).update(self.frames[0])
+        self.query_one("#loading").display = False
+        self.query_one("#map-art").display = True  
+        
         now = datetime.now()
         self.base_time = now.replace(minute=(now.minute // 15) * 15, second=0, microsecond=0)
 
-        # Set an interval to update the map every 0.5 seconds
-        self.animation_timer = self.set_interval(0.5, self.update_frame)
+        # Set an interval to update the map every 0.8 seconds
+        self.animation_timer = self.set_interval(0.8, self.update_frame)
+
 
     def update_frame(self) -> None:
+        if self.is_paused:
+            return
+            
         if self.frames:
             # Update the static widget with the current Rich Text frame
             map_widget = self.query_one("#map-art", Static)
@@ -314,32 +457,51 @@ class RadarScreen(Screen):
             
             # Format time based on user preference
             time_format = get_time_format()
-            if time_format == "24":
+            if "%H" in time_format:
                 time_str = frame_time.strftime("%H:%M")
             else:
                 time_str = frame_time.strftime("%I:%M %p").lstrip("0")
             
             # Update the legend with the time!
             legend = self.query_one("#legend-label", Label)
-            legend.update(f"LEGEND  [ {time_str} ]")
+            legend.update(f"[ {time_str} ]")
             
             # Move to the next frame, loop back to 0 if at the end
             self.current_frame_index = (self.current_frame_index + 1) % len(self.frames)
 
+    def action_toggle_pause(self) -> None:
+        """Pause/Resume the radar animation with the space bar."""
+        if self.animation_timer:
+            self.is_paused = not self.is_paused
+            if self.is_paused:
+                self.animation_timer.pause()
+                self.query_one("#legend-label", Label).update("[ PAUSED ]")
+            else:
+                self.animation_timer.resume()
+                # Force an immediate update so the user sees it resume instantly
+                self.update_frame()
+                # UI will update on next timer tick
+
 def save_settings(settings):
-    """Save settings to settings.json."""
-    with open("settings.json", "w") as f:
+    """Save settings to the centralized settings file."""
+    try:
+        from .weather_api import SETTINGS_FILE
+    except (ImportError, ValueError):
+        from weather_api import SETTINGS_FILE
+        
+    write_log(f"Updating settings: {settings}")
+    with open(SETTINGS_FILE, "w") as f:
         json.dump(settings, f)
     # Clear caches
     get_settings.cache_clear()
-    get_temperature_unit.cache_clear()
-    get_time_format.cache_clear()
 
 class SettingsScreen(Screen):
     """The configuration settings screen."""
 
     def compose(self) -> ComposeResult:
-        yield Header(show_clock=True)
+        header = Header(show_clock=True)
+        header.time_format = get_time_format()
+        yield header
         with Horizontal(id="settings-container"):
             with Vertical(classes="settings-box"):
                 yield Label("Temperature units", classes="settings-title")
@@ -352,15 +514,16 @@ class SettingsScreen(Screen):
                     yield RadioButton("Use IP", id="use-ip-radio")
                     yield RadioButton("Zip Code", id="zip-code-radio")
                 
-                yield Label("Zip Code Entry", id="zip-label")
-                yield Input(placeholder="Zip Code", id="zip-code-input")
-                yield Button("Save Zip Code", id="save-zip-btn")
+                with Vertical(id="zip-code-group"):
+                    yield Label("Zip Code Entry", id="zip-label")
+                    yield Input(placeholder="Zip Code", id="zip-code-input")
+                    yield Button("Save Zip Code", id="save-zip-btn")
             
             with Vertical(classes="settings-box"):
                 yield Label("Time Format", classes="settings-title")
                 with RadioSet(id="time-format"):
-                    yield RadioButton("24 hour")
                     yield RadioButton("12 hour", value=True)
+                    yield RadioButton("24 hour")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -400,10 +563,8 @@ class SettingsScreen(Screen):
     def update_zip_input_state(self, use_ip: bool) -> None:
         self.query_one("#zip-code-input", Input).disabled = use_ip
         self.query_one("#save-zip-btn", Button).disabled = use_ip
-        # Optional: update display to reflect state
-        self.query_one("#zip-label").display = not use_ip
-        self.query_one("#zip-code-input").display = not use_ip
-        self.query_one("#save-zip-btn").display = not use_ip
+        # Toggle entire group visibility
+        self.query_one("#zip-code-group").display = not use_ip
 
     def on_radio_set_changed(self, event: RadioSet.Changed) -> None:
         # Save settings
@@ -419,6 +580,8 @@ class SettingsScreen(Screen):
                 if radio.value:
                     settings["time_format"] = radio.label.plain
                     break
+            # Immediately update the header clock format on this screen
+            self.query_one(Header).time_format = get_time_format()
         elif event.radio_set.id == "location-method":
             use_ip = self.query_one("#use-ip-radio", RadioButton).value
             settings["use_ip"] = use_ip
@@ -437,30 +600,46 @@ class LogScreen(Screen):
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="log-container"):
-            yield Header(show_clock=True)
+            header = Header(show_clock=True)
+            header.time_format = get_time_format()
+            yield header
             yield Log()
             yield Footer()
 
     def on_mount(self) -> None:
+        try:
+            from .weather_api import LOG_FILE
+        except (ImportError, ValueError):
+            from weather_api import LOG_FILE
+
         log = self.query_one(Log)
         log.clear()
         
         self.last_read_position = 0
         try:
-            with open("TermRad.log", "r") as f:
+            with open(LOG_FILE, "r") as f:
                 f.seek(self.last_read_position)
                 for line in f:
                     log.write_line(line.rstrip())
                 self.last_read_position = f.tell()
         except FileNotFoundError:
-            log.write_line("TermRad.log not found. No logs to display.")
+            log.write_line(f"Log file not found at {LOG_FILE}")
 
         self.set_interval(1, self.update_log_content)
 
+    def on_screen_resume(self) -> None:
+        """Update header format when returning to log screen."""
+        self.query_one(Header).time_format = get_time_format()
+
     def update_log_content(self) -> None:
+        try:
+            from .weather_api import LOG_FILE
+        except (ImportError, ValueError):
+            from weather_api import LOG_FILE
+
         log = self.query_one(Log)
         try:
-            with open("TermRad.log", "r") as f:
+            with open(LOG_FILE, "r") as f:
                 f.seek(self.last_read_position)
                 new_content = f.read()
                 if new_content:
@@ -473,23 +652,40 @@ class LogScreen(Screen):
 
 class TermRad(App):
     """A terminal radar and weather forecasting app."""
-    CSS_PATH = "TermRadStyles.tcss"
+    CSS_PATH = os.path.join(os.path.dirname(__file__), "TermRadStyles.tcss")
 
     BINDINGS = [
-        ("ctrl+q", "quit", "Quit"),
-        ("h", "home", "Home"), 
-        ("r", "radar", "Radar"), 
-        ("f", "forecast", "Forecast"), 
-        ("ctrl+l", "log", "Log")
-        # ("s", "settings", "Settings"), 
-        #("ctrl+s", "screenshot", "Screenshot"), 
-        #("ctrl+a", "maximize", "Maximize")
+        Binding("h", "home", "Home"), 
+        Binding("r", "radar", "Radar"), 
+        Binding("f", "forecast", "Forecast"), 
+        Binding("s", "settings", "Settings"), 
+        Binding("ctrl+l", "log", "Log"),
+        Binding("ctrl+p", "palette", "Palette"),
+        Binding("ctrl+q", "quit", "Quit"),
+        Binding("ctrl+c", "quit", "Quit", show=False),
     ]
+
+    def __init__(self, public_mode=False, **kwargs):
+        super().__init__(**kwargs)
+        self.public_mode = public_mode
     
 
     def on_mount(self) -> None:
         self.register_theme(termrad_theme)
-        self.theme = "termrad"
+        
+        # Load saved theme from settings
+        settings = get_settings()
+        saved_theme = settings.get("theme", "termrad")
+        
+        # Update theme colors
+        self.app.theme_variables["text"] = "#FFFFFF"
+        self.app.theme_variables["foreground"] = "#FFFFFF"
+        self.app.theme_variables["panel"] = "#333333"
+        
+        try:
+            self.theme = saved_theme
+        except Exception:
+            self.theme = "termrad"
 
         self.install_screen(HomeScreen(), name="home")
         self.install_screen(RadarScreen(), name="radar")
@@ -502,6 +698,10 @@ class TermRad(App):
     # Action methods mapped to BINDINGS
     def action_quit(self) -> None:
         write_log("Exiting...")
+        # Save current theme preference
+        settings = get_settings()
+        settings["theme"] = self.theme
+        save_settings(settings)
         self.exit()
     
     def action_home(self) -> None:
@@ -517,13 +717,37 @@ class TermRad(App):
         self.switch_screen("forecast")
         
     def action_settings(self) -> None:
+        if self.public_mode:
+            return
         write_log("Switching to settings screen...")
         self.switch_screen("settings")
 
     def action_log(self) -> None:
+        if self.public_mode:
+            return
         write_log("Switching to log screen...")
         self.switch_screen("log")
 
-if __name__ == "__main__":
-    app = TermRad()
+    def action_palette(self) -> None:
+        """Action for switching the color palette."""
+        self.app.action_toggle_dark()
+
+def main():
+    parser = argparse.ArgumentParser(description="TermRad Terminal Weather App")
+    parser.add_argument("--public", action="store_true", help="Run in public mode (disables settings and logs)")
+    args = parser.parse_args()
+    
+    if args.public:
+        # Filter bindings at the class level before instantiation
+        # This is the most reliable way to remove them from the footer
+        TermRad.BINDINGS = [
+            b for b in TermRad.BINDINGS 
+            if (isinstance(b, Binding) and b.key not in ("s", "ctrl+l")) or 
+               (isinstance(b, tuple) and b[0] not in ("s", "ctrl+l"))
+        ]
+    
+    app = TermRad(public_mode=args.public)
     app.run()
+
+if __name__ == "__main__":
+    main()
