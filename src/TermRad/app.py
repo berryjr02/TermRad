@@ -101,6 +101,34 @@ def get_time_format():
     return "%H:%M:%S" if time_pref == "24 hour" else "%I:%M %p"
 
 
+def get_radar_quality():
+    """Get the radar rendering quality preference."""
+    settings = get_settings()
+    return settings.get("radar_quality", "High-Res")
+
+
+def get_radar_profile():
+    """Get the radar performance profile."""
+    settings = get_settings()
+    profile = settings.get("radar_profile", "Balanced (1 hr)")
+    # Mapping profiles to (frames, interval)
+    # Spans are calculated as: (frames - 1) * interval
+    profiles = {
+        "Lite (30 min)": (7, 5),  # (7-1)*5 = 30 mins
+        "Balanced (1 hr)": (13, 5),  # (13-1)*5 = 60 mins
+        "Deep (2 hr)": (25, 5),  # (25-1)*5 = 120 mins
+    }
+    return profiles.get(profile, (13, 5))
+
+
+def get_animation_speed():
+    """Get the radar animation speed in seconds."""
+    settings = get_settings()
+    speed_pref = settings.get("animation_speed", "Normal")
+    speeds = {"Fast": 0.3, "Normal": 0.6, "Slow": 1.0}
+    return speeds.get(speed_pref, 0.6)
+
+
 def get_app_coordinates():
     """Get coordinates based on current app settings."""
     settings = get_settings()
@@ -338,7 +366,7 @@ class RadarScreen(Screen):
 
             # The New Color Legend
             with Vertical(id="legend-container"):
-                yield Label("Snow/Ice", classes="legend-swatch swatch-snow")
+                yield Label("Mist/Light", classes="legend-swatch swatch-snow")
                 yield Label("Light Rain", classes="legend-swatch swatch-light")
                 yield Label("Mod Rain", classes="legend-swatch swatch-mod")
                 yield Label("Heavy Rain", classes="legend-swatch swatch-heavy")
@@ -359,6 +387,9 @@ class RadarScreen(Screen):
         self.lat, self.lon, self.country = None, None, None
         self.current_use_ip = settings.get("use_ip", True)
         self.current_zip_code = settings.get("zip_code", "")
+        self.current_quality = get_radar_quality()
+        self.current_profile = settings.get("radar_profile", "Balanced")
+        self.current_speed = settings.get("animation_speed", "Normal")
         self.temperature_unit = get_temperature_unit()
         self.time_format = get_time_format()
 
@@ -370,8 +401,13 @@ class RadarScreen(Screen):
 
         new_use_ip = settings.get("use_ip", True)
         new_zip_code = settings.get("zip_code", "")
-        new_temperature = get_temperature_unit()
-        new_time_format = get_time_format()
+        new_quality = settings.get("radar_quality", "High-Res")
+        new_profile = settings.get("radar_profile", "Balanced (1 hr)")
+        new_speed = settings.get("animation_speed", "Normal")
+        new_temperature = "C" if settings.get("temperature") == "Celsius" else "F"
+        new_time_format = (
+            "%H:%M:%S" if settings.get("time_format") == "24 hour" else "%I:%M %p"
+        )
 
         if new_temperature != self.temperature_unit:
             self.temperature_unit = new_temperature
@@ -382,7 +418,7 @@ class RadarScreen(Screen):
                     (f"{p['time']}\n", "bold underline"),
                     (f"{temp}°{self.temperature_unit}\n", "bold yellow"),
                     (f"{p['short_forecast']}\n\n", "italic"),
-                    ("Wind:  ", "dim"),
+                    ("Wind: ", "dim"),
                     (f"{p['wind']}\n", ""),
                     ("Precip: ", "dim"),
                     (f"{p['precip']}\n", ""),
@@ -395,10 +431,23 @@ class RadarScreen(Screen):
 
         ip_changed = new_use_ip != self.current_use_ip
         zip_changed = new_zip_code != self.current_zip_code
+        quality_changed = new_quality != self.current_quality
+        profile_changed = new_profile != self.current_profile
+        speed_changed = new_speed != self.current_speed
 
-        if ip_changed or zip_changed:
+        if (
+            ip_changed
+            or zip_changed
+            or quality_changed
+            or profile_changed
+            or speed_changed
+        ):
             self.current_use_ip = new_use_ip
             self.current_zip_code = new_zip_code
+            self.current_quality = new_quality
+            self.current_profile = new_profile
+            self.current_speed = new_speed
+            self.current_frame_index = 0  # Reset counter to prevent IndexError
 
             if self.animation_timer:
                 self.animation_timer.stop()
@@ -422,13 +471,16 @@ class RadarScreen(Screen):
 
             # 2. Fetch the rest of the data concurrently (at the same time!)
             with concurrent.futures.ThreadPoolExecutor() as executor:
+                num_f, interval = get_radar_profile()
                 # Launch all three network requests simultaneously
                 future_frames = executor.submit(
                     get_radar_frames,
                     MICHIGAN_MAP_PLACEHOLDER,
-                    num_frames=5,
+                    num_frames=num_f,
                     highlight_lat=self.lat,
                     highlight_lon=self.lon,
+                    quality=get_radar_quality(),
+                    interval_mins=interval,
                 )
                 future_alerts = executor.submit(get_alerts, self.lat, self.lon)
                 future_forecast = executor.submit(
@@ -507,12 +559,15 @@ class RadarScreen(Screen):
         self.query_one("#map-art").display = True
 
         now = datetime.now()
-        self.base_time = now.replace(
-            minute=(now.minute // 15) * 15, second=0, microsecond=0
+        # Offset by 10 mins to match the API buffer and align to 5-min increments safely
+        offset_now = now - timedelta(minutes=10)
+        self.base_time = offset_now.replace(
+            minute=(offset_now.minute // 5) * 5, second=0, microsecond=0
         )
 
-        # Set an interval to update the map every 0.8 seconds
-        self.animation_timer = self.set_interval(0.8, self.update_frame)
+        # Set an interval to update the map based on user speed preference
+        speed = get_animation_speed()
+        self.animation_timer = self.set_interval(speed, self.update_frame)
 
     def update_frame(self) -> None:
         if self.is_paused:
@@ -524,7 +579,7 @@ class RadarScreen(Screen):
             map_widget.update(self.frames[self.current_frame_index])
 
             frames_from_newest = (len(self.frames) - 1) - self.current_frame_index
-            frame_time = self.base_time - timedelta(minutes=frames_from_newest * 15)
+            frame_time = self.base_time - timedelta(minutes=frames_from_newest * 5)
 
             # Format time based on user preference
             time_format = get_time_format()
@@ -582,6 +637,11 @@ class SettingsScreen(Screen):
                     yield RadioButton("Fahrenheit", value=True)
                     yield RadioButton("Celsius")
 
+                yield Label("Time Format", classes="settings-title")
+                with RadioSet(id="time-format"):
+                    yield RadioButton("12 hour", value=True)
+                    yield RadioButton("24 hour")
+
                 yield Label("Location Method", classes="settings-title")
                 with RadioSet(id="location-method"):
                     yield RadioButton("Use IP", id="use-ip-radio")
@@ -593,11 +653,23 @@ class SettingsScreen(Screen):
                     yield Button("Save Zip Code", id="save-zip-btn")
 
             with Vertical(classes="settings-box"):
-                yield Label("Time Format", classes="settings-title")
-                with RadioSet(id="time-format"):
-                    yield RadioButton("12 hour", value=True)
-                    yield RadioButton("24 hour")
-        yield Footer()
+                yield Label("Radar Quality", classes="settings-title")
+                with RadioSet(id="radar-quality"):
+                    yield RadioButton("High-Res", value=True)
+                    yield RadioButton("Standard")
+
+                yield Label("Radar History", classes="settings-title")
+                with RadioSet(id="radar-profile"):
+                    yield RadioButton("Lite (30 min)")
+                    yield RadioButton("Balanced (1 hr)", value=True)
+                    yield RadioButton("Deep (2 hr)")
+
+                yield Label("Animation Speed", classes="settings-title")
+                with RadioSet(id="animation-speed"):
+                    yield RadioButton("Fast")
+                    yield RadioButton("Normal", value=True)
+                    yield RadioButton("Slow")
+            yield Footer()
 
     def on_mount(self) -> None:
         # Load settings from file
@@ -608,6 +680,30 @@ class SettingsScreen(Screen):
         temp_value = settings.get("temperature", "Fahrenheit")
         for radio in temp_radio.children:
             if radio.label.plain == temp_value:
+                radio.value = True
+                break
+
+        # Set radar quality
+        quality_radio = self.query_one("#radar-quality", RadioSet)
+        quality_value = settings.get("radar_quality", "High-Res")
+        for radio in quality_radio.children:
+            if radio.label.plain == quality_value:
+                radio.value = True
+                break
+
+        # Set radar profile
+        profile_radio = self.query_one("#radar-profile", RadioSet)
+        profile_value = settings.get("radar_profile", "Balanced (1 hr)")
+        for radio in profile_radio.children:
+            if radio.label.plain == profile_value:
+                radio.value = True
+                break
+
+        # Set animation speed
+        speed_radio = self.query_one("#animation-speed", RadioSet)
+        speed_value = settings.get("animation_speed", "Normal")
+        for radio in speed_radio.children:
+            if radio.label.plain == speed_value:
                 radio.value = True
                 break
 
@@ -646,6 +742,21 @@ class SettingsScreen(Screen):
             for radio in event.radio_set.children:
                 if radio.value:
                     settings["temperature"] = radio.label.plain
+                    break
+        elif event.radio_set.id == "radar-quality":
+            for radio in event.radio_set.children:
+                if radio.value:
+                    settings["radar_quality"] = radio.label.plain
+                    break
+        elif event.radio_set.id == "radar-profile":
+            for radio in event.radio_set.children:
+                if radio.value:
+                    settings["radar_profile"] = radio.label.plain
+                    break
+        elif event.radio_set.id == "animation-speed":
+            for radio in event.radio_set.children:
+                if radio.value:
+                    settings["animation_speed"] = radio.label.plain
                     break
         elif event.radio_set.id == "time-format":
             for radio in event.radio_set.children:
@@ -718,6 +829,7 @@ class LogScreen(Screen):
                     for line in new_content.splitlines():
                         log.write_line(line)
                     self.last_read_position = f.tell()
+                    log.scroll_end(animate=False)
         except FileNotFoundError:
             pass
 
@@ -768,24 +880,46 @@ class TermRad(App):
         self.push_screen("home")
 
         # Start pre-fetching weather data immediately in the background
-        self.pre_fetch_data()
+        self.pre_fetch_data(settings)
 
     @work(thread=True, exclusive=True)
-    def pre_fetch_data(self) -> None:
+    def pre_fetch_data(self, settings: dict) -> None:
         """Fetch all weather data in the background so screens load instantly."""
         write_log("Starting background data pre-fetch...")
         try:
+            # Get current preferences directly from passed settings
+            use_ip = settings.get("use_ip", True)
+            zip_code = settings.get("zip_code", "")
+
             # 1. Resolve coordinates
-            lat, lon, country = get_app_coordinates()
+            if use_ip in [True, "true", "True"]:
+                lat, lon, _ = get_coords_auto()
+            elif zip_code:
+                lat, lon, _ = get_coords_manual(zip_code)
+            else:
+                lat, lon, _ = None, None, None
+
             if lat and lon:
                 # 2. Fire off data fetches (cached via @lru_cache)
-                # We don't need the results here, just need to fill the cache
                 get_numerical_forecast(lat, lon)
+
+                # Use settings to get profile/quality without re-reading file
+                profile = settings.get("radar_profile", "Balanced (1 hr)")
+                profiles = {
+                    "Lite (30 min)": (7, 5),
+                    "Balanced (1 hr)": (13, 5),
+                    "Deep (2 hr)": (25, 5),
+                }
+                num_f, interval = profiles.get(profile, (13, 5))
+                quality = settings.get("radar_quality", "High-Res")
+
                 get_radar_frames(
                     MICHIGAN_MAP_PLACEHOLDER,
-                    num_frames=5,
+                    num_frames=num_f,
                     highlight_lat=lat,
                     highlight_lon=lon,
+                    quality=quality,
+                    interval_mins=interval,
                 )
                 get_alerts(lat, lon)
                 write_log("Background pre-fetch complete.")

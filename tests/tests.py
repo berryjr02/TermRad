@@ -136,7 +136,6 @@ class TestTermRadIntegrated(unittest.TestCase):
         loaded = TermRad.get_settings()
         self.assertEqual(loaded["test"], "value")
 
-
     # --- ASSET LOADING TESTS ---
     @patch("builtins.open", side_effect=FileNotFoundError)
     def test_logic_load_asset_missing(self, mock_open):
@@ -144,23 +143,30 @@ class TestTermRadIntegrated(unittest.TestCase):
         self.assertEqual(TermRad.load_asset("nonexistent.txt"), "")
 
     # --- NETWORK ROBUSTNESS TESTS ---
-    @patch('TermRad.weather_api.requests.get')
-    @patch('TermRad.weather_api.time.sleep') # Don't actually wait during tests
+    @patch("TermRad.weather_api.requests.get")
+    @patch("TermRad.weather_api.time.sleep")  # Don't actually wait during tests
     def test_api_fetch_json_retry_logic(self, mock_sleep, mock_get):
         # Simulate 2 failures followed by 1 success
         mock_response_fail = MagicMock()
         mock_response_fail.status_code = 500
-        
+
         mock_response_success = MagicMock()
         mock_response_success.status_code = 200
         mock_response_success.json.return_value = {"key": "value"}
-        
-        mock_get.side_effect = [mock_response_fail, mock_response_fail, mock_response_success]
-        
+
+        mock_get.side_effect = [
+            mock_response_fail,
+            mock_response_fail,
+            mock_response_success,
+        ]
+
         result = weather_api.fetch_json("http://test.com", "Test API")
-        
+
         self.assertEqual(result, {"key": "value"})
-        self.assertEqual(mock_get.call_count, 3) # Verified it retried exactly as intended
+        self.assertEqual(
+            mock_get.call_count, 3
+        )  # Verified it retried exactly as intended
+
 
 if __name__ == "__main__":
     unittest.main()
