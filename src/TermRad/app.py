@@ -19,6 +19,7 @@ from textual.widgets import (
     RadioButton,
     RadioSet,
     Static,
+    Switch,
 )
 
 try:
@@ -127,6 +128,12 @@ def get_animation_speed():
     speed_pref = settings.get("animation_speed", "Normal")
     speeds = {"Fast": 0.3, "Normal": 0.6, "Slow": 1.0}
     return speeds.get(speed_pref, 0.6)
+
+
+def get_noise_filter():
+    """Get the radar noise filter (despeckle) preference."""
+    settings = get_settings()
+    return settings.get("noise_filter", True)
 
 
 def get_app_coordinates():
@@ -390,6 +397,7 @@ class RadarScreen(Screen):
         self.current_quality = get_radar_quality()
         self.current_profile = settings.get("radar_profile", "Balanced")
         self.current_speed = settings.get("animation_speed", "Normal")
+        self.current_noise_filter = settings.get("noise_filter", True)
         self.temperature_unit = get_temperature_unit()
         self.time_format = get_time_format()
 
@@ -404,6 +412,7 @@ class RadarScreen(Screen):
         new_quality = settings.get("radar_quality", "High-Res")
         new_profile = settings.get("radar_profile", "Balanced (1 hr)")
         new_speed = settings.get("animation_speed", "Normal")
+        new_noise_filter = settings.get("noise_filter", True)
         new_temperature = "C" if settings.get("temperature") == "Celsius" else "F"
         new_time_format = (
             "%H:%M:%S" if settings.get("time_format") == "24 hour" else "%I:%M %p"
@@ -434,6 +443,7 @@ class RadarScreen(Screen):
         quality_changed = new_quality != self.current_quality
         profile_changed = new_profile != self.current_profile
         speed_changed = new_speed != self.current_speed
+        noise_changed = new_noise_filter != self.current_noise_filter
 
         if (
             ip_changed
@@ -441,12 +451,14 @@ class RadarScreen(Screen):
             or quality_changed
             or profile_changed
             or speed_changed
+            or noise_changed
         ):
             self.current_use_ip = new_use_ip
             self.current_zip_code = new_zip_code
             self.current_quality = new_quality
             self.current_profile = new_profile
             self.current_speed = new_speed
+            self.current_noise_filter = new_noise_filter
             self.current_frame_index = 0  # Reset counter to prevent IndexError
 
             if self.animation_timer:
@@ -476,12 +488,14 @@ class RadarScreen(Screen):
                 future_frames = executor.submit(
                     get_radar_frames,
                     MICHIGAN_MAP_PLACEHOLDER,
-                    num_frames=num_f,
-                    highlight_lat=self.lat,
-                    highlight_lon=self.lon,
-                    quality=get_radar_quality(),
-                    interval_mins=interval,
+                    num_f,
+                    self.lat,
+                    self.lon,
+                    get_radar_quality(),
+                    interval,
+                    get_noise_filter(),
                 )
+
                 future_alerts = executor.submit(get_alerts, self.lat, self.lon)
                 future_forecast = executor.submit(
                     get_numerical_forecast, self.lat, self.lon
@@ -631,45 +645,59 @@ class SettingsScreen(Screen):
         header.time_format = get_time_format()
         yield header
         with Horizontal(id="settings-container"):
-            with Vertical(classes="settings-box"):
-                yield Label("Temperature units", classes="settings-title")
-                with RadioSet(id="temp-format"):
-                    yield RadioButton("Fahrenheit", value=True)
-                    yield RadioButton("Celsius")
+            # COLUMN 1: Location Settings
+            with Vertical(classes="settings-column"):
+                with Vertical(classes="settings-group"):
+                    yield Label("Location Service", classes="settings-title")
+                    with RadioSet(id="location-method"):
+                        yield RadioButton("Use IP", id="use-ip-radio")
+                        yield RadioButton("Zip Code", id="zip-code-radio")
 
-                yield Label("Time Format", classes="settings-title")
-                with RadioSet(id="time-format"):
-                    yield RadioButton("12 hour", value=True)
-                    yield RadioButton("24 hour")
+                    with Vertical(id="zip-code-group"):
+                        yield Input(placeholder="Zip Code", id="zip-code-input")
+                        yield Button("Save Zip Code", id="save-zip-btn")
 
-                yield Label("Location Method", classes="settings-title")
-                with RadioSet(id="location-method"):
-                    yield RadioButton("Use IP", id="use-ip-radio")
-                    yield RadioButton("Zip Code", id="zip-code-radio")
+            # COLUMN 2: Display Settings
+            with Vertical(classes="settings-column"):
+                with Vertical(classes="settings-group"):
+                    yield Label("Display Prefs", classes="settings-title")
 
-                with Vertical(id="zip-code-group"):
-                    yield Label("Zip Code Entry", id="zip-label")
-                    yield Input(placeholder="Zip Code", id="zip-code-input")
-                    yield Button("Save Zip Code", id="save-zip-btn")
+                    yield Label("Temperature", classes="settings-subtitle")
+                    with RadioSet(id="temp-format"):
+                        yield RadioButton("Fahrenheit", value=True)
+                        yield RadioButton("Celsius")
 
-            with Vertical(classes="settings-box"):
-                yield Label("Radar Quality", classes="settings-title")
-                with RadioSet(id="radar-quality"):
-                    yield RadioButton("High-Res", value=True)
-                    yield RadioButton("Standard")
+                    yield Label("Time Format", classes="settings-subtitle")
+                    with RadioSet(id="time-format"):
+                        yield RadioButton("12 hour", value=True)
+                        yield RadioButton("24 hour")
 
-                yield Label("Radar History", classes="settings-title")
-                with RadioSet(id="radar-profile"):
-                    yield RadioButton("Lite (30 min)")
-                    yield RadioButton("Balanced (1 hr)", value=True)
-                    yield RadioButton("Deep (2 hr)")
+            # COLUMN 3: Radar Engine Settings
+            with Vertical(classes="settings-column"):
+                with Vertical(classes="settings-group"):
+                    yield Label("Radar Engine", classes="settings-title")
 
-                yield Label("Animation Speed", classes="settings-title")
-                with RadioSet(id="animation-speed"):
-                    yield RadioButton("Fast")
-                    yield RadioButton("Normal", value=True)
-                    yield RadioButton("Slow")
-            yield Footer()
+                    yield Label("Rendering", classes="settings-subtitle")
+                    with RadioSet(id="radar-quality"):
+                        yield RadioButton("High-Res", value=True)
+                        yield RadioButton("Standard")
+
+                    yield Label("History Span", classes="settings-subtitle")
+                    with RadioSet(id="radar-profile"):
+                        yield RadioButton("Lite (30 min)")
+                        yield RadioButton("Balanced (1 hr)", value=True)
+                        yield RadioButton("Deep (2 hr)")
+
+                    yield Label("Animation Speed", classes="settings-subtitle")
+                    with RadioSet(id="animation-speed"):
+                        yield RadioButton("Fast")
+                        yield RadioButton("Normal", value=True)
+                        yield RadioButton("Slow")
+
+                    with Horizontal(classes="switch-container"):
+                        yield Label("Noise Filter")
+                        yield Switch(id="noise-filter", value=True)
+        yield Footer()
 
     def on_mount(self) -> None:
         # Load settings from file
@@ -706,6 +734,10 @@ class SettingsScreen(Screen):
             if radio.label.plain == speed_value:
                 radio.value = True
                 break
+
+        # Set noise filter
+        noise_switch = self.query_one("#noise-filter", Switch)
+        noise_switch.value = settings.get("noise_filter", True)
 
         # Set time format
         time_radio = self.query_one("#time-format", RadioSet)
@@ -777,6 +809,12 @@ class SettingsScreen(Screen):
             zip_code = self.query_one("#zip-code-input", Input).value
             settings = get_settings()
             settings["zip_code"] = zip_code
+            save_settings(settings)
+
+    def on_switch_changed(self, event: Switch.Changed) -> None:
+        if event.switch.id == "noise-filter":
+            settings = get_settings()
+            settings["noise_filter"] = event.value
             save_settings(settings)
 
 
@@ -916,11 +954,15 @@ class TermRad(App):
                 get_radar_frames(
                     MICHIGAN_MAP_PLACEHOLDER,
                     num_frames=num_f,
-                    highlight_lat=lat,
-                    highlight_lon=lon,
-                    quality=quality,
+                    highlight_lat=self.lat if hasattr(self, "lat") else lat,
+                    highlight_lon=self.lon if hasattr(self, "lon") else lon,
+                    quality=get_radar_quality()
+                    if "quality" not in locals()
+                    else quality,
                     interval_mins=interval,
+                    noise_filter=get_noise_filter(),
                 )
+
                 get_alerts(lat, lon)
                 write_log("Background pre-fetch complete.")
         except Exception as e:

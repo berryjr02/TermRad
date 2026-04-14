@@ -18,9 +18,13 @@ MICHIGAN_BBOX = "-87.6643,41.69,-81.2357,45.80"
 
 @lru_cache(maxsize=10)
 def process_radar_image(
-    img_bytes, padded_lines_tuple, highlight_coord=None, quality="High-Res"
+    img_bytes,
+    padded_lines_tuple,
+    highlight_coord=None,
+    quality="High-Res",
+    noise_filter=True,
 ):
-    """Processes a raw image and converts it to Rich Text based on quality setting."""
+    """Processes a raw image and converts it to Rich Text based on settings."""
     img = Image.open(BytesIO(img_bytes)).convert("RGBA")
     width, img_height = img.size
     pixels = img.load()
@@ -28,6 +32,23 @@ def process_radar_image(
 
     # Pre-calculate the highlight area
     hx, hy = highlight_coord if highlight_coord else (-10, -10)
+
+    def is_noise(px, py):
+        """Check if a pixel is isolated noise (despeckle)."""
+        if not noise_filter:
+            return False
+
+        # Check 8 neighbors
+        for dy in [-1, 0, 1]:
+            for dx in [-1, 0, 1]:
+                if dx == 0 and dy == 0:
+                    continue
+                nx, ny = px + dx, py + dy
+                if 0 <= nx < width and 0 <= ny < img_height:
+                    nr, ng, nb, na = pixels[nx, ny]
+                    if na >= 50 and (nr + ng + nb > 30):
+                        return False  # Contiguous data found
+        return True  # Isolated blip
 
     # HIGH-RES MODE (Half-blocks)
     if quality == "High-Res":
@@ -38,6 +59,16 @@ def process_radar_image(
             for x in range(width):
                 r1, g1, b1, a1 = pixels[x, y_top]
                 r2, g2, b2, a2 = pixels[x, y_bot]
+
+                # Check for noise
+                top_is_noise = a1 >= 50 and is_noise(x, y_top)
+                bot_is_noise = a2 >= 50 and is_noise(x, y_bot)
+
+                if top_is_noise:
+                    a1 = 0
+                if bot_is_noise:
+                    a2 = 0
+
                 char = padded_lines_tuple[y_char][x]
 
                 # Marker Logic (Highest Priority)
@@ -83,6 +114,11 @@ def process_radar_image(
         for y in range(img_height):
             for x in range(width):
                 r, g, b, a = pixels[x, y]
+
+                # Check for noise
+                if a >= 50 and is_noise(x, y):
+                    a = 0
+
                 char = padded_lines_tuple[y][x]
 
                 # Marker Logic
@@ -161,6 +197,7 @@ def get_radar_frames(
     highlight_lon=None,
     quality="High-Res",
     interval_mins=5,
+    noise_filter=True,
 ):
     """Fetches radar frames and returns a list of Rich Text objects."""
 
@@ -217,9 +254,10 @@ def get_radar_frames(
         }
         request_params.append(params)
 
-    # Fetch images in parallel
+    # Fetch images in parallel (capped at 8 workers to be polite to the API)
     frames_results = [None] * num_frames
-    with concurrent.futures.ThreadPoolExecutor(max_workers=num_frames) as executor:
+    max_workers = min(num_frames, 8)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         # We use a list to keep the frames in the correct chronological order
         future_to_index = {
             executor.submit(fetch_radar_frame, base_url, p): i
@@ -237,7 +275,9 @@ def get_radar_frames(
     padded_lines_tuple = tuple(padded_lines)  # Tuples are hashable for lru_cache
     for img_bytes in frames:
         rich_frames.append(
-            process_radar_image(img_bytes, padded_lines_tuple, highlight_coord, quality)
+            process_radar_image(
+                img_bytes, padded_lines_tuple, highlight_coord, quality, noise_filter
+            )
         )
 
     if not rich_frames:
