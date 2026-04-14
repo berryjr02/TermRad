@@ -219,7 +219,8 @@ class RadarScreen(Screen):
         if use_ip in [True, "true", "True"]:
             self.lat, self.lon, self.country = get_coords_auto()
         elif zip_code and zip_code != "":
-            self.lat, self.lon, self.country = get_coords_manual(zip_code)
+            loc = zip_code + ", US"
+            self.lat, self.lon, self.country = get_coords_manual(loc)
         else:
             self.lat, self.lon, self.country = None, None, None
 
