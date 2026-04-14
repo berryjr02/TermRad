@@ -352,11 +352,11 @@ class RadarScreen(Screen):
         yield header
         yield LoadingIndicator(id="loading")
         with Horizontal(id="radar-container"):
-            # ALERTS & FORECAST Panel
-            with Vertical(id="alert-panel"):
+            # ALERTS & FORECAST Panel (Scrollable)
+            with ScrollableContainer(id="alert-panel"):
                 # Alert Section (Hidden if no alerts)
                 with Vertical(id="alerts-section"):
-                    yield Label("Weather Alerts", id="alert-header")
+                    yield Label("Weather Alert", id="alert-header")
                     yield Static("", id="alert-content")
 
                 # Today's Forecast Section (Always visible)

@@ -62,6 +62,7 @@ Footer > .footer--key {
 #alert-panel {
     width: 1fr; /* Flexible width for alerts/forecast */
     height: 100%;
+    scrollbar-gutter: stable;
 }
 
 #alerts-section {
