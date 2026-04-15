@@ -1,0 +1,266 @@
+/* --- Global Styles --- */
+Screen {
+    background: $background;
+    min-width: 100;
+    min-height: 30;
+    overflow: auto;
+    color: $text;
+}
+
+Header {
+    background: $primary;
+    color: black;
+    text-style: bold;
+}
+
+Header > HeaderClock {
+    color: black;
+}
+
+Footer {
+    background: $surface;
+    color: $text;
+}
+
+Footer > .footer--key {
+    background: $primary;
+    color: black;
+    text-style: bold;
+    margin-right: 1;
+}
+
+/* --- Home Screen --- */
+#home-container {
+    align: center middle; 
+    width: 100%;          
+    height: 100%;
+}
+
+#title-art {
+    width: auto;
+    margin-bottom: 2;
+}
+
+.menu-button {
+    width: 32;
+    margin-bottom: 1;
+    background: $surface;
+    border: tall $primary;
+}
+
+.menu-button:hover {
+    background: $primary;
+    color: black;
+}
+
+/* --- Radar Screen Layout --- */
+#radar-container {
+    height: 100%;
+    padding: 1 2;
+}
+
+#alert-panel {
+    width: 1fr; /* Flexible width for alerts/forecast */
+    height: 100%;
+    scrollbar-gutter: stable;
+}
+
+#alerts-section {
+    border: solid $error;
+    padding: 1 2;
+    margin: 0 4 1 4;
+    height: auto;
+}
+
+#alert-header {
+    color: $error;
+    text-style: bold;
+    text-align: center;
+    width: 100%;
+}
+
+#forecast-section {
+    border: solid $primary;
+    padding: 1 2;
+    margin: 0 4;
+    height: auto;
+}
+
+#forecast-header {
+    color: $primary;
+    text-style: bold;
+    text-align: center;
+    width: 100%;
+    margin-bottom: 1;
+}
+
+#latest-forecast {
+    width: 100%;
+}
+
+#map-panel {
+    width: 105; /* Matches calibrated 100-char map + padding */
+    align: center middle;
+}
+
+#map-art {
+    text-align: center;
+    height: auto;
+}
+
+#legend-label {
+    width: 100%;
+    text-align: center;
+    margin-top: 1;
+    margin-bottom: 0;
+    text-style: bold;
+}
+
+/* --- Legend Styles --- */
+#legend-container {
+    width: 1fr;
+    align: center middle;
+}
+
+.legend-swatch {
+    padding: 0 1;
+    margin: 0 1;
+    text-style: bold;
+    text-align: center;
+    border: solid $foreground;
+    width: 16;
+}
+
+/* Base Reflectivity Colors */
+.swatch-snow  { background: #00FFFF; color: black; } 
+.swatch-light { background: #00FF00; color: black; } 
+.swatch-mod   { background: #FFFF00; color: black; } 
+.swatch-heavy { background: #FF0000; color: white; } 
+.swatch-hail  { background: #FF00FF; color: white; } 
+
+/* --- Forecast Screen --- */
+#forecast-screen-content {
+    height: 100%;
+}
+
+#forecast-loading-container {
+    height: 100%;
+    width: 100%;
+    align: center middle;
+}
+
+#forecast_container {
+    border: solid $primary;
+    width: 100%;
+    height: 1fr;
+    layout: grid;
+    grid-size: 2; /* 2-column grid restored */
+    grid-rows: auto;
+    grid-gutter: 1 1;
+    padding: 1 2;
+}
+
+.forecast_item {
+    width: 1fr;
+    height: auto;
+    min-height: 7;
+    border: tall $accent;
+    padding: 1 2;
+    background: $surface;
+    color: $foreground;
+    text-align: center;
+}
+
+/* --- Settings Screen (REVAMPED) --- */
+#settings-container {
+    layout: horizontal;
+    align: center middle;
+    height: 100%;
+    padding: 2 4;
+}
+
+.settings-column {
+    width: 33%;
+    height: 100%;
+    padding: 0 2;
+}
+
+.settings-group {
+    border: tall $primary;
+    background: $surface;
+    padding: 1 2;
+    margin-bottom: 1;
+    height: auto;
+}
+
+.settings-title {
+    text-style: bold;
+    background: $primary;
+    color: black;
+    width: 100%;
+    text-align: center;
+    margin-bottom: 1;
+}
+
+.settings-subtitle {
+    text-style: bold underline;
+    margin-top: 1;
+    margin-bottom: 1;
+    color: $primary;
+}
+
+RadioSet {
+    border: none;
+    background: transparent;
+    padding: 0;
+    margin-bottom: 1;
+    height: auto;
+}
+
+RadioButton {
+    padding: 0;
+    margin: 0;
+}
+
+.switch-container {
+    height: auto;
+    width: 100%;
+    margin-top: 1;
+    padding: 0 1;
+    align: left middle;
+}
+
+.switch-container > Label {
+    width: auto;
+    margin-right: 2;
+    text-style: bold;
+}
+
+Switch {
+    background: $surface;
+    border: none;
+}
+
+Switch > .switch--slider {
+    color: $primary;
+    background: $background;
+}
+
+Switch.-on > .switch--slider {
+    color: $success;
+}
+
+#zip-code-group {
+    border: dashed $accent;
+    padding: 1;
+    margin-top: 1;
+}
+
+#zip-code-input {
+    margin-bottom: 1;
+    border: round $accent;
+}
+
+#save-zip-btn {
+    width: 100%;
+}
